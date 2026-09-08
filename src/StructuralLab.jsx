@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { analyzeFrame, analyzeTruss, makeArch, uid } from "../engine/index.mjs";
 import { FRAME_PRESETS, KINDS } from "./presets.js";
 
@@ -71,7 +71,7 @@ const CSS = `
 .fl .panel{background:${C.panel};border:1.5px solid ${C.ink};border-radius:6px;margin-bottom:13px;overflow:hidden}
 .fl .panel.acc{border-top:3px solid var(--pac,${C.ink})}
 .fl .ph{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 11px;border-bottom:1.5px solid ${C.ink};font:600 10px ${MONO};letter-spacing:.1em;text-transform:uppercase;color:var(--pac,${C.ink})}
-.fl svg.stage{display:block;width:100%;height:auto;touch-action:none;background:
+.fl svg.stage{display:block;width:100%;height:auto;touch-action:pan-y;background:
   repeating-linear-gradient(0deg,transparent,transparent 23px,rgba(27,42,65,.05) 23px,rgba(27,42,65,.05) 24px),
   repeating-linear-gradient(90deg,transparent,transparent 23px,rgba(27,42,65,.05) 23px,rgba(27,42,65,.05) 24px),#fff}
 .fl .hint{display:flex;gap:8px;align-items:center;padding:7px 11px;border-top:1.2px dashed ${C.grid};font:500 9.5px ${MONO};color:${C.inkSoft};line-height:1.5;flex-wrap:wrap}
@@ -179,6 +179,48 @@ const CSS = `
 .fl .call .cx b{font-family:${MONO};font-weight:600;color:${C.ink}}
 @media (prefers-reduced-motion: reduce){.fl .chip,.fl .lchev,.fl .lh,.fl .live .dot{transition:none;animation:none}}
 
+/* ================= phone layout ================= */
+@media(max-width:760px){
+  .fl{padding:8px}
+  .fl .tb{grid-template-columns:1fr}
+  .fl .tbc{border-left:none;border-top:1.5px solid ${C.ink};padding:9px 12px}
+  .fl .tbc:first-child{border-top:none}
+  .fl .ttl{font-size:16px}
+  .fl .tb .tbc:nth-child(3){flex-direction:row;gap:10px;justify-content:flex-start !important;align-items:center !important}
+  .fl .readout{grid-template-columns:1fr 1fr}
+  .fl .rc:nth-child(3),.fl .rc:nth-child(4){border-top:1.5px solid ${C.grid}}
+  .fl .rc:nth-child(3){border-left:none}
+  .fl .rv{font-size:15px}
+  .fl .panel{margin-bottom:10px}
+  /* three number fields side by side is unusable at 375px */
+  .fl .grid3{grid-template-columns:1fr 1fr}
+  .fl .seg{gap:6px}
+  .fl .sb{min-width:72px;padding:10px 5px;font-size:9px}
+  .fl .btn{padding:10px 12px;font-size:10px}
+  .fl .del{font-size:20px;padding:4px 9px}
+  .fl .item{padding:10px 9px}
+  .fl input[type=range]{height:34px}
+  .fl .kindb{padding:13px 5px;font-size:11px}
+  .fl .navb{padding:10px 3px 9px;font-size:9px;letter-spacing:.04em}
+  .fl .navb svg{width:18px;height:18px}
+  .fl .chip{padding:8px 11px;font-size:10.5px}
+  .fl .dchip{padding:8px 12px;font-size:10.5px}
+  .fl .tog{padding:10px 10px}
+  .fl .lb{padding:12px 12px 14px}
+  .fl .say{font-size:13.5px;line-height:1.68}
+  .fl .eqn{font-size:11.5px;padding:11px 12px;overflow-x:auto}
+  .fl table.vt{font-size:10.5px;display:block;overflow-x:auto;white-space:nowrap}
+  .fl .hint{font-size:10px;padding:9px 10px}
+  .fl .pnote{font-size:11px}
+  /* diagram labels: the viewBox is smaller on phones, this lifts them to ~10px on screen */
+  .fl svg.stage text{font-size:12px}
+}
+@media(max-width:400px){
+  .fl .ttl{font-size:15px;gap:7px}
+  .fl .tmeta{font-size:8.5px}
+  .fl .grid3{grid-template-columns:1fr}
+}
+
 /* structure-type switch */
 .fl .kindbar{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:2px solid ${C.ink};border-radius:7px;overflow:hidden;margin-top:13px;background:${C.panel}}
 .fl .kindb{padding:11px 6px;background:${C.panel};border:none;border-right:1.5px solid ${C.ink};color:${C.inkSoft};cursor:pointer;font:700 11px ${MONO};letter-spacing:.1em;text-transform:uppercase}
@@ -248,11 +290,28 @@ const Step = ({ children }) => <span className="step">{children}</span>;
 /* ============================================================
    CANVAS
    ============================================================ */
-function FrameCanvas({ model, res, diagram, selection, onSelect, onDragNode, kind }) {
+/** true when the viewport is phone-width; re-evaluates on resize/rotate */
+function useNarrow(bp = 760) {
+  const q = `(max-width:${bp}px)`;
+  const [n, setN] = useState(() => typeof window !== "undefined" && window.matchMedia
+    ? window.matchMedia(q).matches : false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const m = window.matchMedia(q);
+    const h = e => setN(e.matches);
+    setN(m.matches);
+    m.addEventListener ? m.addEventListener("change", h) : m.addListener(h);
+    return () => { m.removeEventListener ? m.removeEventListener("change", h) : m.removeListener(h); };
+  }, [q]);
+  return n;
+}
+
+function FrameCanvas({ model, res, diagram, selection, onSelect, onDragNode, kind, narrow }) {
   const svgRef = useRef(null);
   const txRef = useRef(null);
   const drag = useRef(null);
-  const VBW = 760, VBH = 520, M = 52;
+  // smaller coordinate space on phones => labels/arrows render proportionally larger
+  const VBW = narrow ? 430 : 760, VBH = narrow ? 400 : 520, M = narrow ? 34 : 52;
 
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   model.nodes.forEach(n => { minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x); minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y); });
@@ -449,7 +508,7 @@ function FrameCanvas({ model, res, diagram, selection, onSelect, onDragNode, kin
         const sel = selection && selection.kind === "node" && selection.id === n.id;
         const cx = SX(n.x), cy = SY(n.y);
         return <g key={n.id}>
-          <circle cx={cx} cy={cy} r="14" fill="transparent" style={{ cursor: "grab" }} onPointerDown={e => onDown(e, n.id)} />
+          <circle cx={cx} cy={cy} r={narrow ? 20 : 14} fill="transparent" style={{ cursor: "grab", touchAction: "none" }} onPointerDown={e => onDown(e, n.id)} />
           <rect x={cx - 4} y={cy - 4} width="8" height="8" fill={sel ? C.sel : C.ink} stroke="#fff" strokeWidth="1.2" style={{ pointerEvents: "none" }} />
           {diagram === "model" && <text x={cx + 8} y={cy - 8} fontSize="9.5" fontFamily={MONO} fontWeight="600" fill={C.inkSoft} style={{ pointerEvents: "none" }}>{n.id}</text>}
         </g>;
@@ -658,6 +717,7 @@ export default function StructuralLab({ initialKind = "frame", hideKindBar = fal
   const [section, setSection] = useState(initialKind === "arch" ? "geometry" : "loads");
   const [kind, setKind] = useState(initialKind);
   const [preset, setPreset] = useState(KINDS[initialKind].presets[0].name);
+  const narrow = useNarrow();
   const [archCfg, setArchCfg] = useState({ span: 12, rise: 3.5, segs: 12, profile: "parabola", support: "pin", threePin: false });
 
   const model = { nodes, members, supports, loads };
@@ -788,7 +848,7 @@ export default function StructuralLab({ initialKind = "frame", hideKindBar = fal
             <div className="dchips">
               {diagrams.map(k => <button key={k} className={"dchip" + (diagram === k ? " on" : "")} style={{ "--dc": DIAG[k].col }} onClick={() => setDiagram(k)}><span className="dt" style={{ background: DIAG[k].col }} />{isTruss && k === "N" ? "Axial (T/C)" : DIAG[k].lab}</button>)}
             </div>
-            <FrameCanvas model={model} res={res} diagram={diagram} selection={selection} onSelect={select} onDragNode={onDragNode} kind={kind} />
+            <FrameCanvas narrow={narrow} model={model} res={res} diagram={diagram} selection={selection} onSelect={select} onDragNode={onDragNode} kind={kind} />
             <div className="hint">
               <span><b>Drag</b> nodes · <b>tap</b> a node or member to edit</span>
               {diagram === "M" && <span className="legend"><span className="sw" style={{ background: C.moment }} />plotted on the tension face · ○ = hinge, M = 0</span>}

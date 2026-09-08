@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   clamp, fmt, analyzeBeam, mkProbe, detectStandard, activeLoads,
   BEAM_PRESETS as PRESETS, withIds, beamUid as uid,
@@ -17,7 +17,28 @@ const C = {
   good: "#1E7F3C", bad: "#C0392B",
   nav: "#16263C", navSoft: "#8FA3B8", sel: "#D4622A",
 };
-const W = 760, PADL = 50, PADR = 22, PLOTW = W - PADL - PADR;
+/* Drawing geometry. On phones we shrink the viewBox rather than the drawing:
+   the SVG scales to fit, so a smaller coordinate space makes every label,
+   arrow head and stroke render proportionally larger on screen. */
+const GEO  = { W: 760, PADL: 50, PADR: 22, PLOTW: 760 - 50 - 22 };
+const GEO_N = { W: 432, PADL: 34, PADR: 14, PLOTW: 432 - 34 - 14 };
+const W = GEO.W, PADL = GEO.PADL, PADR = GEO.PADR, PLOTW = GEO.PLOTW;
+
+/** true when the viewport is phone-width; re-evaluates on resize/rotate */
+function useNarrow(bp = 760) {
+  const q = `(max-width:${bp}px)`;
+  const [n, setN] = useState(() => typeof window !== "undefined" && window.matchMedia
+    ? window.matchMedia(q).matches : false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const m = window.matchMedia(q);
+    const h = e => setN(e.matches);
+    setN(m.matches);
+    m.addEventListener ? m.addEventListener("change", h) : m.addListener(h);
+    return () => { m.removeEventListener ? m.removeEventListener("change", h) : m.removeListener(h); };
+  }, [q]);
+  return n;
+}
 const MONO = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
 
 const CSS = `
@@ -207,6 +228,53 @@ const CSS = `
 .bl .chip{transition:transform .1s,border-color .1s,background .1s}
 .bl .card{transition:box-shadow .15s}
 @media (prefers-reduced-motion: reduce){.bl .chip,.bl .lchev,.bl .lh,.bl .card{transition:none}}
+
+/* ================= phone layout ================= */
+@media(max-width:760px){
+  .bl{padding:8px}
+  /* stop iOS zooming the page when a number field is focused */
+  .bl input[type=number]{font-size:16px;padding:8px 7px}
+  /* title block stacks; the stamp gets its own full-width row */
+  .bl .tb{grid-template-columns:1fr}
+  .bl .tbc{border-left:none;border-top:1.5px solid ${C.ink};padding:9px 12px}
+  .bl .tbc:first-child{border-top:none}
+  .bl .ttl{font-size:16px}
+  .bl .tb .tbc:nth-child(3){flex-direction:row;gap:10px;justify-content:flex-start !important;align-items:center !important}
+  /* four cramped columns -> a readable 2x2 */
+  .bl .readout{grid-template-columns:1fr 1fr}
+  .bl .rc:nth-child(3),.bl .rc:nth-child(4){border-top:1.5px solid ${C.grid}}
+  .bl .rc:nth-child(3){border-left:none}
+  .bl .rv{font-size:15px}
+  .bl .panel{margin-bottom:10px}
+  .bl .ph{padding:9px 10px;font-size:9.5px}
+  /* comfortable touch targets (44px is the accessibility guideline) */
+  .bl .snap button{width:40px;height:40px;font-size:11px}
+  .bl .dirbtn{width:56px;height:48px}
+  .bl .seg .sb{height:46px;font-size:9px}
+  .bl .btn{padding:10px 13px;font-size:10px}
+  .bl .del{font-size:20px;padding:4px 9px}
+  .bl .item{padding:11px 10px}
+  .bl input[type=range]{height:34px}
+  .bl .row{grid-template-columns:1fr 78px}
+  .bl .chips{padding:8px;gap:7px;-webkit-overflow-scrolling:touch}
+  .bl .chip{padding:8px 11px;font-size:10.5px}
+  .bl .navb{padding:10px 3px 9px;font-size:9px;letter-spacing:.04em}
+  .bl .navb svg{width:18px;height:18px}
+  /* teaching layer reads better with a touch more room */
+  .bl .lb{padding:12px 12px 14px}
+  .bl .say{font-size:13.5px;line-height:1.68}
+  .bl .eqn{font-size:11.5px;padding:11px 12px;overflow-x:auto}
+  .bl .m{font-size:11px}
+  .bl table.vt{font-size:10.5px;display:block;overflow-x:auto;white-space:nowrap}
+  .bl .hint{font-size:10px;padding:9px 10px}
+  /* diagram labels: smaller viewBox on phones lifts these to ~10px on screen */
+  .bl svg text{font-size:12px}
+}
+@media(max-width:400px){
+  .bl .readout{grid-template-columns:1fr 1fr}
+  .bl .ttl{font-size:15px;gap:7px}
+  .bl .tmeta{font-size:8.5px}
+}
 `;
 
 /* ---------- inline icons ---------- */
@@ -298,14 +366,15 @@ function SupportGlyph({ s, px, BY, L }) {
   );
 }
 
-const mkHover = onHover => ({
-  onMouseMove: e => { const r = e.currentTarget.getBoundingClientRect(); const vx = ((e.clientX - r.left) / r.width) * W; onHover(clamp((vx - PADL) / PLOTW, 0, 1)); },
+const mkHover = (onHover, g = GEO) => ({
+  onMouseMove: e => { const r = e.currentTarget.getBoundingClientRect(); const vx = ((e.clientX - r.left) / r.width) * g.W; onHover(clamp((vx - g.PADL) / g.PLOTW, 0, 1)); },
   onMouseLeave: () => onHover(null),
-  onTouchMove: e => { const t = e.touches[0]; if (!t) return; const r = e.currentTarget.getBoundingClientRect(); const vx = ((t.clientX - r.left) / r.width) * W; onHover(clamp((vx - PADL) / PLOTW, 0, 1)); },
+  onTouchMove: e => { const t = e.touches[0]; if (!t) return; const r = e.currentTarget.getBoundingClientRect(); const vx = ((t.clientX - r.left) / r.width) * g.W; onHover(clamp((vx - g.PADL) / g.PLOTW, 0, 1)); },
 });
 
 /* ---------- the editable beam canvas ---------- */
-function BeamCanvas({ L, supports, hinges, loads, res, showR, hoverX, onHover, selected, onSelect, onDrag }) {
+function BeamCanvas({ L, supports, hinges, loads, res, showR, hoverX, onHover, selected, onSelect, onDrag, narrow }) {
+  const { W, PADL, PADR, PLOTW } = narrow ? GEO_N : GEO;
   const BY = 96, H = 226, RY = 202;
   const svgRef = useRef(null);
   const drag = useRef(null);
@@ -458,8 +527,9 @@ function BeamCanvas({ L, supports, hinges, loads, res, showR, hoverX, onHover, s
   );
 }
 
-function DiagPlot({ color, X, Y, L, flip = false, anns = [], cfs = [], showXLabels = false, hoverX, onHover, height = 156 }) {
-  const PT = 16, PB = showXLabels ? 22 : 12;
+function DiagPlot({ color, X, Y, L, flip = false, anns = [], cfs = [], showXLabels = false, hoverX, onHover, height = 156, narrow }) {
+  const { W, PADL, PADR, PLOTW } = narrow ? GEO_N : GEO;
+  const PT = narrow ? 20 : 16, PB = (showXLabels ? 22 : 12) + (narrow ? 8 : 0);
   const xToPx = x => PADL + (x / L) * PLOTW;
   let ymin = 0, ymax = 0;
   for (const v of Y) { if (v < ymin) ymin = v; if (v > ymax) ymax = v; }
@@ -476,7 +546,7 @@ function DiagPlot({ color, X, Y, L, flip = false, anns = [], cfs = [], showXLabe
   if (hoverX !== null) { let bd = 1e9; for (let i = 0; i < X.length; i++) { const d = Math.abs(X[i] - hoverX); if (d < bd) { bd = d; hi = i; } } }
   const metreStep = L > 14 ? 2 : 1;
   return (
-    <svg viewBox={`0 0 ${W} ${height}`} {...mkHover(onHover)} style={{ touchAction: "pan-y" }}>
+    <svg viewBox={`0 0 ${W} ${height}`} {...mkHover(onHover, narrow ? GEO_N : GEO)} style={{ touchAction: "pan-y" }}>
       {ticks.map(m => <line key={m} x1={xToPx(m)} y1={PT - 6} x2={xToPx(m)} y2={height - PB} stroke={C.grid} strokeWidth="1" opacity="0.5" />)}
       <path d={fpath} fill={color} opacity="0.1" />
       <line x1={PADL} y1={zero} x2={PADL + PLOTW} y2={zero} stroke={C.ink} strokeWidth="1.3" />
@@ -796,6 +866,7 @@ export default function BeamLab() {
   const [showR, setShowR] = useState(true);
   const [hoverX, setHoverXf] = useState(null);
   const [preset, setPreset] = useState(PRESETS[0].name);
+  const narrow = useNarrow();
 
   const setHoverX = f => setHoverXf(f === null ? null : f * L);
 
@@ -1003,24 +1074,24 @@ export default function BeamLab() {
                 <span style={{ color: C.good }}>reactions</span>
               </label>
             </div>
-            <BeamCanvas L={L} supports={supports} hinges={hinges} loads={loads} res={res} showR={showR} hoverX={hoverX} onHover={setHoverX} selected={selected} onSelect={select} onDrag={onCanvasDrag} />
+            <BeamCanvas narrow={narrow} L={L} supports={supports} hinges={hinges} loads={loads} res={res} showR={showR} hoverX={hoverX} onHover={setHoverX} selected={selected} onSelect={select} onDrag={onCanvasDrag} />
             <div className="hint"><b>Drag</b> any support, hinge or load to reposition · <b>tap</b> a marker to edit it · hover the diagrams to scrub values.</div>
           </div>
 
           {res.stable ? (<>
             <div className="panel acc" style={{ "--pac": C.shear }}>
               <div className="ph phc" style={{ "--pac": C.shear }}><span><span className="sw" style={{ background: C.shear }} />Shear force V — kN</span><span className="dim" style={{ textTransform: "none", letterSpacing: 0 }}>V = dM/dx</span></div>
-              <DiagPlot color={C.shear} X={res.xs} Y={res.V} L={L} anns={annsV} hoverX={hoverX} onHover={setHoverX} />
+              <DiagPlot narrow={narrow} height={narrow ? 150 : 156} color={C.shear} X={res.xs} Y={res.V} L={L} anns={annsV} hoverX={hoverX} onHover={setHoverX} />
             </div>
             <div className="panel acc" style={{ "--pac": C.moment }}>
               <div className="ph phc" style={{ "--pac": C.moment }}><span><span className="sw" style={{ background: C.moment }} />Bending moment M — kN·m</span>
                 <button className="btn gh" style={{ padding: "4px 8px" }} onClick={() => setBmdTension(t => !t)}>{bmdTension ? "tension side ↓" : "sagging ↑"}</button>
               </div>
-              <DiagPlot color={C.moment} X={res.xs} Y={res.M} L={L} flip={bmdTension} anns={annsM} cfs={res.contraflexure} hoverX={hoverX} onHover={setHoverX} />
+              <DiagPlot narrow={narrow} height={narrow ? 150 : 156} color={C.moment} X={res.xs} Y={res.M} L={L} flip={bmdTension} anns={annsM} cfs={res.contraflexure} hoverX={hoverX} onHover={setHoverX} />
             </div>
             <div className="panel acc" style={{ "--pac": C.defl }}>
               <div className="ph phc" style={{ "--pac": C.defl }}><span><span className="sw" style={{ background: C.defl }} />Deflection δ — mm</span><span className="dim" style={{ textTransform: "none", letterSpacing: 0 }}>up +</span></div>
-              <DiagPlot color={C.defl} X={res.dx} Y={Dmm} L={L} anns={annsD} showXLabels hoverX={hoverX} onHover={setHoverX} />
+              <DiagPlot narrow={narrow} height={narrow ? 158 : 156} color={C.defl} X={res.dx} Y={Dmm} L={L} anns={annsD} showXLabels hoverX={hoverX} onHover={setHoverX} />
             </div>
           </>) : (
             <div className="panel"><div className="calc m dim">No diagrams — the structure is a mechanism. Add a support, change a roller/pin to fixed, or remove a hinge. Each internal hinge releases one moment continuity, so you need r ≥ 2 + h restraints arranged stably.</div></div>
