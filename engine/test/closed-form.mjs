@@ -1,5 +1,5 @@
 /** Closed-form verification of the frame solver. */
-import { analyzeFrame } from '../index.mjs';
+import { analyzeFrame, analyzeBeam, mkProbe } from '../index.mjs';
 const EI = 2e4, EA = 2e6;
 let fails = 0;
 const near = (a, b, tol, l) => { const ok = Math.abs(a - b) <= tol; if (!ok) fails++; console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${l}: got ${a.toFixed(4)} exp ${b.toFixed(4)}`); };
@@ -51,6 +51,48 @@ console.log('\n=== A. MEMBER END RELEASES (internal hinges) ===');
   const hingeM = Math.abs(r.members[1].samples[0].M);
   near(hingeM, 0, 0.02, 'moment AT the hinge = 0');
   console.log('    SI =', r.SI, '(releases counted:', r.releases, ')');
+}
+
+console.log('\n=== A2. INTERNAL HINGES ANYWHERE ALONG A MEMBER ===');
+{
+  const L = 8, w = 10;
+  // one member, hinge at midspan — must match the two-member release version above
+  const r = analyzeFrame({ EI, EA, sub: 12, nodes: [{ id: 'A', x: 0, y: 0 }, { id: 'B', x: L, y: 0 }], members: [{ id: 'm', n1: 'A', n2: 'B' }],
+    hinges: [{ id: 'h', member: 'm', t: 0.5 }],
+    supports: [{ node: 'A', type: 'fixed' }, { node: 'B', type: 'fixed' }], loads: [{ type: 'udl', member: 'm', w, dir: 'grav' }] });
+  near(Math.abs(R(r, 'A').M), w * L * L / 8, 0.1, 'fixed-fixed + hinge at 0.5L → M_fix = wL²/8');
+  near(R(r, 'A').Ry, w * L / 2, 0.05, '  R = wL/2');
+  const atHinge = r.members[0].samples.reduce((a, p) => Math.abs(p.s - L / 2) < Math.abs(a.s - L / 2) ? p : a);
+  near(atHinge.M, 0, 0.02, '  M = 0 at the hinge');
+  near(r.SI, 2, 0, '  SI = 3m + r − 3n − releases = 3 + 6 − 6 − 1 = 2');
+}
+{
+  // three-pinned portal made with a hinge inside the beam: H = wL²/8h, M_corner = −H·h
+  const Lb = 6, h = 4, w = 15;
+  const r = analyzeFrame({ EI, EA,
+    nodes: [{ id: 'A', x: 0, y: 0 }, { id: 'B', x: 0, y: h }, { id: 'C', x: Lb, y: h }, { id: 'D', x: Lb, y: 0 }],
+    members: [{ id: 'c1', n1: 'A', n2: 'B' }, { id: 'bm', n1: 'B', n2: 'C' }, { id: 'c2', n1: 'C', n2: 'D' }],
+    hinges: [{ id: 'h', member: 'bm', t: 0.5 }],
+    supports: [{ node: 'A', type: 'pin' }, { node: 'D', type: 'pin' }], loads: [{ type: 'udl', member: 'bm', w, dir: 'grav' }] });
+  near(r.SI, 0, 0, 'portal with beam hinge  SI = 0 (determinate)');
+  near(R(r, 'A').Rx, w * Lb * Lb / (8 * h), 0.02, '  thrust H = wL²/8h (inward)');
+  near(r.members[1].samples[0].M, -w * Lb * Lb / (8 * h) * h, 0.05, '  corner moment = −H·h (hogging)');
+}
+{
+  // hinge off-centre: right part spans hinge→B, left part is a cantilever carrying the hinge shear
+  const L = 10, w = 10, a = 3;
+  const r = analyzeFrame({ EI, EA, nodes: [{ id: 'A', x: 0, y: 0 }, { id: 'B', x: L, y: 0 }], members: [{ id: 'm', n1: 'A', n2: 'B' }],
+    hinges: [{ id: 'h', member: 'm', t: a / L }],
+    supports: [{ node: 'A', type: 'fixed' }, { node: 'B', type: 'rollerV' }], loads: [{ type: 'udl', member: 'm', w, dir: 'grav' }] });
+  near(R(r, 'B').Ry, w * (L - a) / 2, 0.02, 'Gerber hinge at 0.3L  R_B = w(L−a)/2');
+  near(Math.abs(R(r, 'A').M), w * a * a / 2 + w * (L - a) / 2 * a, 0.05, '  |M_A| = wa²/2 + V_hinge·a');
+  near(r.SI, 0, 0, '  determinate');
+}
+{
+  // a hinge in a simply supported span is a mechanism, not a crash
+  const r = analyzeFrame({ EI, EA, nodes: [{ id: 'A', x: 0, y: 0 }, { id: 'B', x: 6, y: 0 }], members: [{ id: 'm', n1: 'A', n2: 'B' }],
+    hinges: [{ id: 'h', member: 'm', t: 0.5 }], supports: [{ node: 'A', type: 'pin' }, { node: 'B', type: 'rollerV' }], loads: [{ type: 'udl', member: 'm', w: 10, dir: 'grav' }] });
+  near(r.stable ? 1 : 0, 0, 0, 'pin + roller + hinge → mechanism reported (stable = false)');
 }
 
 console.log('\n=== B. SUPPORT SETTLEMENT ===');
@@ -121,6 +163,44 @@ console.log('\n=== E. SPRING SUPPORT ===');
   near(Math.abs(r.nodes[1].uy), dExp, 1e-4, 'spring tip  δ=P/(3EI/L³+k)');
   near(Math.abs(R(r, 'B').Ry), k * dExp, 0.05, 'spring force = kδ');
   console.log('    rigid prop would give δ=0; spring gives', (dExp * 1000).toFixed(2), 'mm');
+}
+
+console.log('\n=== S. SHEAR SIGN — anticlockwise positive ===');
+{
+  const L = 6, w = 12;
+  const ss = n1 => analyzeFrame({ EI, EA, nodes: [{ id: 'A', x: 0, y: 0 }, { id: 'B', x: L, y: 0 }], members: [{ id: 'm', n1, n2: n1 === 'A' ? 'B' : 'A' }], supports: [{ node: 'A', type: 'pin' }, { node: 'B', type: 'rollerV' }], loads: [{ type: 'udl', member: 'm', w, dir: 'grav' }] }).members[0].samples;
+  const s = ss('A');
+  near(s[0].V, -w * L / 2, 1e-3, 'SS UDL  V at A = −wL/2 (clockwise there)');
+  near(s[s.length - 1].V, w * L / 2, 1e-3, 'SS UDL  V at B = +wL/2 (anticlockwise there)');
+  // the sign is physical, not tied to member direction: define the member B → A
+  const t = ss('B');
+  near(t[t.length - 1].V, -w * L / 2, 1e-3, 'member drawn B→A  still V = −wL/2 at A');
+  near(t[0].V, w * L / 2, 1e-3, 'member drawn B→A  still V = +wL/2 at B');
+}
+{
+  const H = 4, P = 12;
+  const r = analyzeFrame({ EI, EA, nodes: [{ id: 'A', x: 0, y: 0 }, { id: 'B', x: 0, y: H }], members: [{ id: 'c', n1: 'A', n2: 'B' }], supports: [{ node: 'A', type: 'fixed' }], loads: [{ type: 'node', node: 'B', Fx: P }] });
+  near(mn(r.members[0], 'V'), -P, 1e-3, 'column, tip load →  V = −P (clockwise) ...');
+  near(mx(r.members[0], 'V'), -P, 1e-3, '  ...and constant up the column');
+}
+{
+  // the frame and beam solvers agree on the shear sign
+  const L = 8, P = 20;
+  const f = analyzeFrame({ EI, EA, nodes: [{ id: 'A', x: 0, y: 0 }, { id: 'B', x: L, y: 0 }], members: [{ id: 'm', n1: 'A', n2: 'B' }], supports: [{ node: 'A', type: 'pin' }, { node: 'B', type: 'rollerV' }], loads: [{ type: 'mpoint', member: 'm', t: 0.5, Fx: 0, Fy: -P, M: 0 }] }).members[0].samples;
+  const b = mkProbe(analyzeBeam({ L, EI, supports: [{ x: 0, type: 'pin' }, { x: L, type: 'roller' }], hinges: [], loads: [{ type: 'point', x: L / 2, P }] }));
+  near(f[0].V, b.VSide(0, 'R'), 1e-3, 'frame V at A matches the beam solver (−P/2)');
+  near(f[f.length - 1].V, b.VSide(L, 'L'), 1e-3, 'frame V at B matches the beam solver (+P/2)');
+}
+{
+  // V = −dM/ds inside every member of a loaded, swaying portal
+  const r = analyzeFrame({ EI, EA,
+    nodes: [{ id: 'A', x: 0, y: 0 }, { id: 'B', x: 0, y: 4 }, { id: 'C', x: 6, y: 4 }, { id: 'D', x: 6, y: 0 }],
+    members: [{ id: 'c1', n1: 'A', n2: 'B' }, { id: 'bm', n1: 'B', n2: 'C' }, { id: 'c2', n1: 'C', n2: 'D' }],
+    supports: [{ node: 'A', type: 'fixed' }, { node: 'D', type: 'fixed' }],
+    loads: [{ type: 'udl', member: 'bm', w: 15, dir: 'grav' }, { type: 'node', node: 'B', Fx: 20 }] });
+  let worst = 0;
+  r.members.forEach(mb => mb.samples.slice(1).forEach((q, i) => { const p = mb.samples[i]; worst = Math.max(worst, Math.abs((q.M - p.M) + (p.V + q.V) / 2 * (q.s - p.s))); }));
+  near(worst, 0, 1e-6, 'portal  ΔM = −∫V ds in every member (V = −dM/ds)');
 }
 
 export const failures = () => fails;

@@ -6,7 +6,8 @@
  *
  * Conventions
  *   Geometry : global X right +, Y up +, rotation anticlockwise +
- *   Internal : axial tension +, bending sagging +
+ *   Internal : axial tension +, bending sagging +, shear anticlockwise +
+ *              (a positive V turns a slice anticlockwise, so V = −dM/dx)
  *   Units    : kN, m, kN·m (EI in kN·m², EA in kN)
  *
  * Note: the 2D solvers return deflections in metres; the 1D beam solver

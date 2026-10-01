@@ -3,7 +3,9 @@
  * post-processing for V(x) and M(x) (so discontinuities stay sharp).
  *
  * Units: m, kN, kN·m; EI in kN·m². Loads: downward positive.
- * Conventions: sagging M positive, deflection v positive upward.
+ * Conventions: sagging M positive, deflection v positive upward,
+ * shear V positive ANTICLOCKWISE (on a slice: left face down, right face up),
+ * so V = −dM/dx and the load w = dV/dx.
  * Supports internal hinges (moment releases).
  */
 const clamp = (x, a, b) => Math.min(Math.max(x, a), b);
@@ -206,12 +208,14 @@ function analyzeBeam(cfg) {
     return [A1, x * A1 - I1];
   }
   const EPSX = 1e-7;
+  // anticlockwise-positive shear = net DOWNWARD force left of the cut
+  // (equivalently, net upward force right of it)
   function Vat(x, incl) {
     let V = 0;
     for (const p of pforces) {
-      if (p.x < x - EPSX || (incl && Math.abs(p.x - x) <= EPSX)) V -= p.P;
+      if (p.x < x - EPSX || (incl && Math.abs(p.x - x) <= EPSX)) V += p.P;
     }
-    for (const u of udls) V -= wInt(u, x)[0];
+    for (const u of udls) V += wInt(u, x)[0];
     return V;
   }
   function Mat(x, incl) {
@@ -234,7 +238,8 @@ function analyzeBeam(cfg) {
   events.forEach(x => sampleXs.push(x));
   sampleXs.sort((a, b) => a - b);
   const pts = [];
-  for (const x of sampleXs) {
+  // an event that coincides with a grid point must only be expanded once
+  for (const x of sampleXs.filter((x, i) => i === 0 || x - sampleXs[i - 1] > 1e-9)) {
     const isEvent = events.has(round6(x));
     if (isEvent) { pts.push({ x, incl: false }); pts.push({ x, incl: true }); }
     else pts.push({ x, incl: true });
@@ -632,28 +637,31 @@ function buildShearWalk(L, supports, loads, probe) {
   });
   const udlOver = (a, b) => acts.some(l => l.type === "udl" && l.x1 < b - 1e-6 && l.x2 > a + 1e-6);
   const jstr = j => (Math.abs(j) < 0.05 ? "stays put" : `jumps ${j >= 0 ? "up" : "down"} by ${fmt(Math.abs(j), 1)} kN`);
+  const ramp = d => (Math.abs(d) < 0.05 ? "nets out to no change" : `ramps ${d > 0 ? "up" : "down"}`);
   const steps = [];
-  steps.push(`Imagine slicing the beam and looking only at the piece to the LEFT of the cut. V is the up-or-down force needed to hold that piece still. Start at the far left, x = 0 m — nothing to the left yet, so V = 0.`);
+  steps.push(`Imagine slicing the beam and looking only at the piece to the LEFT of the cut. V is the force the cut must supply to hold that piece still, counted UP as positive — anticlockwise shear. So every downward load you pass lifts V, and every upward push from a support drops it. Start at the far left, x = 0 m — nothing to the left yet, so V = 0.`);
   let prevX = 0, lastRight = 0;
   groups.forEach(g => {
     if (g.x - prevX > 1e-6) {
       const rhsLeft = probe.VSide(g.x, "L");
       steps.push(udlOver(prevX, g.x)
-        ? `Slide to x = ${fmt(g.x)} m. A spread load pushes down all the way, so the line slopes straight down: V goes ${fmt(lastRight, 1)} → ${fmt(rhsLeft, 1)} kN.`
+        ? `Slide to x = ${fmt(g.x)} m. A spread load acts along the way, so instead of jumping, V ${ramp(rhsLeft - lastRight)}: ${fmt(lastRight, 1)} → ${fmt(rhsLeft, 1)} kN.`
         : `Slide to x = ${fmt(g.x)} m. No load in between, so the line is flat — V holds at ${fmt(lastRight, 1)} kN.`);
       lastRight = rhsLeft;
     }
     const left = probe.VSide(g.x, "L"), right = probe.VSide(g.x, "R");
-    const causes = g.items.map(it => it.type === "support"
-      ? `the support shoves up by R = ${fmt((probe.Rat(it.x) || { R: 0 }).R, 1)} kN`
-      : `a point load tugs ${it.P < 0 ? "up" : "down"} by ${fmt(Math.abs(it.P), 1)} kN`);
+    const causes = g.items.map(it => {
+      if (it.type !== "support") return `a point load tugs ${it.P < 0 ? "up" : "down"} by ${fmt(Math.abs(it.P), 1)} kN`;
+      const R = (probe.Rat(it.x) || { R: 0 }).R;
+      return `the support ${R < 0 ? "pulls down" : "shoves up"} with R = ${fmt(R, 1)} kN`;
+    });
     steps.push(`At x = ${fmt(g.x)} m, ${causes.join(" and ")}, so V ${jstr(right - left)} → V = ${fmt(right, 1)} kN.`);
     lastRight = right; prevX = g.x;
   });
   if (L - prevX > 1e-6) {
     const endL = probe.VSide(L, "L");
     steps.push(udlOver(prevX, L)
-      ? `Run on to x = ${fmt(L)} m. Spread load to the end, so V slopes ${fmt(lastRight, 1)} → ${fmt(endL, 1)} kN.`
+      ? `Run on to x = ${fmt(L)} m. Spread load to the end, so V ${ramp(endL - lastRight)}: ${fmt(lastRight, 1)} → ${fmt(endL, 1)} kN.`
       : `Run on to x = ${fmt(L)} m. Flat to the end — V stays ${fmt(lastRight, 1)} kN.`);
     lastRight = endL;
   }

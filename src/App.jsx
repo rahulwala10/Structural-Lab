@@ -1,11 +1,14 @@
 import React, { useState } from "react";
 import BeamLab from "./BeamLab.jsx";
 import StructuralLab from "./StructuralLab.jsx";
+import Practice from "./Practice.jsx";
+import { frameToBeam } from "../engine/practice.mjs";
 
 /* ============================================================
    Structural Lab — shell.
    Beams get their own dedicated 1D solver and narrated hand-solve;
-   frames, trusses and arches share the 2D stiffness engine.
+   frames, trusses and arches share the 2D stiffness engine;
+   Practice serves random exam-style questions on beams and frames.
    ============================================================ */
 
 const TABS = [
@@ -13,6 +16,7 @@ const TABS = [
   { id: "frame", label: "Frame", sub: "N · V · M · δ" },
   { id: "truss", label: "Truss", sub: "axial T/C" },
   { id: "arch",  label: "Arch",  sub: "thrust · M" },
+  { id: "practice", label: "Practice", sub: "exam questions" },
 ];
 
 const MONO = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
@@ -20,7 +24,7 @@ const SHELL_CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 .slshell{background:#EEF1F3;min-height:100vh}
 .slshell .bar{position:sticky;top:0;z-index:50;background:#16263C;border-bottom:2px solid #1B2A41;
-  display:grid;grid-template-columns:repeat(4,1fr);box-shadow:0 2px 10px rgba(27,42,65,.18)}
+  display:grid;grid-template-columns:repeat(5,1fr);box-shadow:0 2px 10px rgba(27,42,65,.18)}
 .slshell .bar::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;
   background:linear-gradient(90deg,#2F77B5,#0E8A7B 34%,#D4622A 67%,#6D4FC0)}
 .slshell .tab{padding:11px 4px 9px;background:transparent;border:none;border-right:1px solid rgba(255,255,255,.12);
@@ -31,11 +35,21 @@ const SHELL_CSS = `
 .slshell .tab:hover{background:rgba(255,255,255,.06);color:#fff}
 .slshell .tab.on{background:#EEF1F3;color:#1B2A41;box-shadow:inset 0 -3px 0 #D4622A}
 .slshell .tab:focus-visible{outline:2px solid #D4622A;outline-offset:-3px}
-@media(max-width:420px){.slshell .tab{font-size:10px;letter-spacing:.06em}.slshell .tab .ts{display:none}}
+.slshell .tab.tab-practice{color:#F4B400}
+.slshell .tab.tab-practice.on{color:#1B2A41}
+@media(max-width:420px){.slshell .tab{font-size:9.5px;letter-spacing:.03em}.slshell .tab .ts{display:none}}
 `;
 
 export default function App() {
   const [tab, setTab] = useState("beam");
+  // a practice question opened in a lab: { model | config, nonce }
+  const [handoff, setHandoff] = useState(null);
+  const openInLab = q => {
+    const nonce = Date.now();
+    if (q.family === "beam") { setHandoff({ beam: frameToBeam(q.model), nonce }); setTab("beam"); }
+    else { setHandoff({ frame: q.model, nonce }); setTab("frame"); }
+    if (typeof window !== "undefined") window.scrollTo({ top: 0 });
+  };
   return (
     <div className="slshell">
       <style>{SHELL_CSS}</style>
@@ -45,7 +59,7 @@ export default function App() {
             key={t.id}
             role="tab"
             aria-selected={tab === t.id}
-            className={"tab" + (tab === t.id ? " on" : "")}
+            className={"tab" + (tab === t.id ? " on" : "") + (t.id === "practice" ? " tab-practice" : "")}
             onClick={() => setTab(t.id)}
           >
             {t.label}
@@ -54,9 +68,12 @@ export default function App() {
         ))}
       </nav>
       {tab === "beam"
-        ? <BeamLab />
-        /* key forces a clean remount so the panel loads that type's first preset */
-        : <StructuralLab key={tab} initialKind={tab} hideKindBar />}
+        ? <BeamLab key={handoff && handoff.beam ? handoff.nonce : "beam"} initialConfig={handoff && handoff.beam} />
+        : tab === "practice"
+          ? <Practice onOpenInLab={openInLab} />
+          /* key forces a clean remount so the panel loads that type's first preset */
+          : <StructuralLab key={tab + (tab === "frame" && handoff && handoff.frame ? handoff.nonce : "")} initialKind={tab} hideKindBar
+              initialModel={tab === "frame" && handoff ? handoff.frame : null} />}
     </div>
   );
 }
