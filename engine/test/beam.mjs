@@ -4,7 +4,7 @@
  * Every expected value below comes from a standard published result
  * (Roark / Steel Designers' Manual / first principles), not from the solver.
  */
-import { analyzeBeam, mkProbe, detectStandard, BEAM_PRESETS, withIds } from '../beam.mjs';
+import { analyzeBeam, mkProbe, detectStandard, BEAM_PRESETS, withIds, buildShearWalk } from '../beam.mjs';
 
 const EI = 50000;
 let fails = 0;
@@ -28,8 +28,8 @@ console.log('=== A. SIMPLY SUPPORTED ===');
   near(Rat(r, 0).R, P / 2, 1e-4, 'central point: R = P/2');
   near(r.Mmax.v, P * L / 4, 1e-3, 'central point: M_max = PL/4');
   near(dmm(r, L / 2), P * L ** 3 / (48 * EI) * 1000, 0.02, 'central point: δ = PL³/48EI');
-  near(mkProbe(r).VSide(L / 2, 'L'), P / 2, 1e-3, 'shear just left of load = +P/2');
-  near(mkProbe(r).VSide(L / 2, 'R'), -P / 2, 1e-3, 'shear just right of load = −P/2');
+  near(mkProbe(r).VSide(L / 2, 'L'), -P / 2, 1e-3, 'shear just left of load = −P/2 (anticlockwise +)');
+  near(mkProbe(r).VSide(L / 2, 'R'), P / 2, 1e-3, 'shear just right of load = +P/2 (anticlockwise +)');
 }
 {
   const L = 10, P = 30, a = 3, b = 7;
@@ -249,6 +249,56 @@ console.log('\n=== K. ROBUSTNESS ===');
   // long-span sanity against closed form
   const rl = run(60, SS(60), [{ type: 'udl', x1: 0, x2: 60, w1: 10, w2: 10 }]);
   near(rl.Mmax.v, 10 * 60 * 60 / 8, 0.5, 'long span still matches wL²/8');
+}
+
+console.log('\n=== L. SHEAR SIGN CONVENTION — anticlockwise positive ===');
+{
+  // A positive V turns a slice anticlockwise (left face pushed down, right face up):
+  // V = net downward force left of the cut, so V = −dM/dx and w = dV/dx.
+  const L = 8, w = 10;
+  const P = mkProbe(run(L, SS(L), [{ type: 'udl', x1: 0, x2: L, w1: w, w2: w }]));
+  near(P.VSide(0, 'R'), -w * L / 2, 1e-3, 'SS UDL: V just right of A = −wL/2 (clockwise there)');
+  near(P.VSide(L, 'L'), w * L / 2, 1e-3, 'SS UDL: V just left of B = +wL/2 (anticlockwise there)');
+  near(P.VSide(L / 2), 0, 1e-3, 'SS UDL: V = 0 at midspan, where M peaks');
+  near((P.VSide(5) - P.VSide(3)) / 2, w, 1e-3, 'SS UDL: dV/dx = +w (a downward load lifts V)');
+}
+{
+  const L = 4, P = 10;
+  const left = run(L, [{ x: 0, type: 'fixed' }], [{ type: 'point', x: L, P }]);
+  const right = run(L, [{ x: L, type: 'fixed' }], [{ type: 'point', x: 0, P }]);
+  near(mkProbe(left).VSide(L / 2), -P, 1e-3, 'cantilever fixed at left, tip load: V = −P');
+  near(mkProbe(right).VSide(L / 2), P, 1e-3, 'cantilever fixed at right, tip load: V = +P');
+}
+{
+  const L = 10, P = 30, a = 3;
+  const pr = mkProbe(run(L, SS(L), [{ type: 'point', x: a, P }]));
+  near(pr.VSide(a, 'R') - pr.VSide(a, 'L'), P, 1e-3, 'downward point load P: V jumps UP by P');
+  near(pr.VSide(0, 'R') - pr.VSide(0, 'L'), -P * (L - a) / L, 1e-3, 'upward reaction R_A: V jumps DOWN by R_A');
+}
+{
+  // V = −dM/dx on every stable preset: between samples ΔM = −∫V dx (trapezoid rule)
+  let worst = 0, n = 0;
+  for (const p of BEAM_PRESETS) {
+    const cfg = withIds(p.make());
+    const r = analyzeBeam({ L: cfg.L, EI, supports: cfg.supports, hinges: cfg.hinges.map(h => h.x), loads: cfg.loads });
+    if (!r.stable) continue;
+    n++;
+    const scale = Math.max(1, Math.abs(r.Mmax.v), Math.abs(r.Mmin.v));
+    for (let i = 0; i < r.xs.length - 1; i++) {
+      const h = r.xs[i + 1] - r.xs[i];
+      if (h < 1e-9) continue; // duplicated point at a jump
+      const resid = (r.M[i + 1] - r.M[i]) + (r.V[i] + r.V[i + 1]) / 2 * h;
+      worst = Math.max(worst, Math.abs(resid) / scale);
+    }
+  }
+  ok(worst < 1e-6, `V = −dM/dx along all ${n} stable presets (worst residual ${worst.toExponential(1)} × peak M)`);
+}
+{
+  // the narrated hand-solve must walk the anticlockwise convention too
+  const L = 8, w = 10, sup = SS(L), lds = [{ type: 'udl', x1: 0, x2: L, w1: w, w2: w }];
+  const steps = buildShearWalk(L, sup, lds, mkProbe(run(L, sup, lds)));
+  ok(/jumps down by 40\.0 kN → V = -40\.0 kN/.test(steps[1]), 'walk: the left reaction drops V to −wL/2');
+  ok(/ramps up: -40\.0 → 40\.0 kN/.test(steps[2]), 'walk: a downward UDL ramps V up');
 }
 
 console.log(fails === 0 ? '\n****  BEAM SOLVER: ALL CHECKS PASS  ****\n' : `\n****  BEAM SOLVER: ${fails} FAILURE(S)  ****\n`);

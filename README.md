@@ -30,7 +30,7 @@ The exam rewards understanding relationships, so the presets are deliberately bu
 
 **Structure types** — four tabs across the top:
 
-- **Beam** — its own dedicated 1D solver with a fully narrated hand-solve: reactions worked by taking moments, a left-to-right walk building the shear diagram, the bending diagram explained through V = dM/dx, deflection from curvature = M/EI, three independent checks, and a closed-form textbook cross-check that shows *hand vs engine* side by side. Supports internal hinges (Gerber beams), continuous spans, overhangs and applied couples.
+- **Beam** — its own dedicated 1D solver with a fully narrated hand-solve: reactions worked by taking moments, a left-to-right walk building the shear diagram (anticlockwise shear positive), the bending diagram explained through V = −dM/dx, deflection from curvature = M/EI, three independent checks, and a closed-form textbook cross-check that shows *hand vs engine* side by side. Supports internal hinges (Gerber beams), continuous spans, overhangs and applied couples.
 - **Frame** — plane frames with per-member stiffness, internal hinges, settlement and springs.
 - **Truss** — pin-jointed, with tension/compression colouring and zero-force detection.
 - **Arch** — live generator (span, rise, profile, springings, optional crown hinge).
@@ -48,7 +48,7 @@ The exam rewards understanding relationships, so the presets are deliberately bu
 
 **Members** — per-member **EI** and **EA** (relative stiffness studies), and **moment releases at either end** for internal hinges, three-pinned frames and Gerber beams.
 
-**Output** — axial *N*, shear *V*, moment *M* plotted on the tension face, exaggerated deflected shape over the original, reactions, determinacy, member end-action table and a stiffness / distribution-factor table.
+**Output** — axial *N*, shear *V* (anticlockwise positive), moment *M* plotted on the tension face, exaggerated deflected shape over the original, reactions, determinacy, member end-action table and a stiffness / distribution-factor table.
 
 Works on phone, tablet and laptop: two columns collapse to one, the canvas auto-fits, and nodes are drag-editable by touch.
 
@@ -89,7 +89,7 @@ The repo ships a workflow that builds, tests and publishes on every push to `mai
 
 ## Verification
 
-The solver is not trusted on the basis that it looks right. `npm test` runs **142 checks** against independent closed-form solutions, hand methods and equilibrium invariants, and exits non-zero on any failure (so CI fails loudly).
+The solver is not trusted on the basis that it looks right. `npm test` runs **162 checks** against independent closed-form solutions, hand methods and equilibrium invariants, and exits non-zero on any failure (so CI fails loudly).
 
 Covered, among others:
 
@@ -112,8 +112,9 @@ Covered, among others:
 | Truss (triangle, Warren) | method of joints, to 3 decimals |
 | Parabolic 2-pin arch under UDL | *H* = *wL*²/8*h*, bending < 3% of *wL*²/8 |
 | Determinacy bookkeeping | portal 3 → 1 → 0; releases at a pin not double-counted |
+| Shear sign (anticlockwise +) | SS UDL: *V* = −*wL*/2 at A, +*wL*/2 at B, even with the member drawn B→A; column with a rightward tip load *V* = −*P*; beam and frame solvers agree; *V* = −d*M*/d*s* in every member of a swaying portal |
 
-### Beam solver (68 of those checks)
+### Beam solver (94 of those checks)
 
 | Check | Expected |
 |---|---|
@@ -128,6 +129,7 @@ Covered, among others:
 | Internal hinge (Gerber) | M = 0 at the hinge, R = wc/2, M_fix = wa²/2 + V·a |
 | Mechanism detection | no support / single pin / simply supported + mid hinge |
 | Self-check integrity | the in-app *hand vs engine* table flags a deliberately corrupted result |
+| Shear sign (anticlockwise +) | SS UDL −wL/2 → +wL/2; cantilever V = −P fixed left, +P fixed right; a downward point load lifts V by P; V = −dM/dx on every preset; the narrated walk follows suit |
 
 Plus all 26 frame/truss/arch presets and all 12 beam presets solved for stability, equilibrium and shear closure, and a robustness set (missing nodes, zero-length members, coincident supports, unrestrained models, inverted load extents, uplift loads, 0.5 m and 60 m spans, 10⁶ stiffness ratios) that must never throw.
 
@@ -190,8 +192,10 @@ result.eqOK;        // true — built-in equilibrium check
 ## Conventions
 
 - Geometry: global **X** right positive, **Y** up positive, rotation **anticlockwise** positive
-- Internal forces: **axial tension positive**, **bending sagging positive**
-- Moments are plotted on the **tension face**
+- Internal forces: **axial tension positive**, **bending sagging positive**, **shear anticlockwise positive**
+- A positive shear pair turns a slice of member **anticlockwise** (left face pushed down, right face pushed up), so *V* = −d*M*/d*x* and *w* = d*V*/d*x* (*w* downward). On a beam, *V* at a cut is the net downward force to its left
+- Moments are plotted on the **tension face** — with anticlockwise-positive shear, the shear diagram reads directly as the slope of the moment diagram as drawn
+- Frame shear diagrams plot positive *V* on each member's local +*y* side (to the left looking from its *from* node to its *to* node), so above beams drawn left to right
 - Units: kN, m, kN·m — *EI* in kN·m², *EA* in kN; deflections reported in mm
 
 ## Scope and limitations

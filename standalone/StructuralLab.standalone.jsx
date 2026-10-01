@@ -4,7 +4,8 @@ import React, { useState, useMemo, useRef } from "react";
    STRUCTURAL LAB — frames, trusses, arches
    Verified direct-stiffness engines.
    Global X right +, Y up +, theta CCW +.
-   Internal forces: tension +, sagging +.
+   Internal forces: tension +, sagging +, shear anticlockwise +
+   (V turns a slice of member anticlockwise; so dM/ds = −V).
    ============================================================ */
 
 function gauss(Ain, bin) {
@@ -254,14 +255,16 @@ function analyzeFrame(model) {
         el.cd.rel.forEach((rd, r) => { ul[rd] = el.cd.y[r] - el.cd.X[r].reduce((s, v, c2) => s + v * uk[c2], 0); });
       }
       const sl = mv(el.k0, ul).map((v, i) => v - el.f0[i]);
-      const Ni = -sl[0], Vi = sl[1], Mi = -sl[2];
+      // sl[1] is the local +y end force on the member, i.e. clockwise shear;
+      // negate it so shear is reported anticlockwise-positive
+      const Ni = -sl[0], Vi = -sl[1], Mi = -sl[2];
       const Le = el.Le, q1 = el.q1, q2 = el.q2, p1 = el.p1, p2 = el.p2;
       const nIn = 4;
       for (let kk = 0; kk <= nIn; kk++) {
         const x = Le * kk / nIn;
         const sG = (el.t0 + (el.t1 - el.t0) * (kk / nIn)) * M.L;
-        const Vx = Vi + q1 * x + (q2 - q1) * x * x / (2 * Le);
-        const Mx = Mi + Vi * x + q1 * x * x / 2 + (q2 - q1) * x * x * x / (6 * Le);
+        const Vx = Vi - q1 * x - (q2 - q1) * x * x / (2 * Le);
+        const Mx = Mi - Vi * x + q1 * x * x / 2 + (q2 - q1) * x * x * x / (6 * Le);
         const Nx = Ni - (p1 * x + (p2 - p1) * x * x / (2 * Le));
         if (!(ei > 0 && kk === 0)) samples.push({ s: sG, N: Nx, V: Vx, M: Mx });
       }
@@ -841,10 +844,14 @@ function FrameCanvas({ model, res, diagram, selection, onSelect, onDragNode, kin
         const base = `M${SX(pts[0].bx)} ${SY(pts[0].by)} ` + pts.map(p => `L${SX(p.tx)} ${SY(p.ty)}`).join(" ") + ` L${SX(pts[pts.length - 1].bx)} ${SY(pts[pts.length - 1].by)} Z`;
         const line = `M${SX(pts[0].tx)} ${SY(pts[0].ty)} ` + pts.map(p => `L${SX(p.tx)} ${SY(p.ty)}`).join(" ");
         let pk = pts[0]; pts.forEach(p => { if (Math.abs(p.val) > Math.abs(pk.val)) pk = p; });
+        // label just beyond the peak, on whichever side of the member it is drawn
+        const sg = pk.val < 0 ? -1 : 1, ox = sg * px, oy = sg * py;
         return <g key={"d" + i}>
           <path d={base} fill={dgCol} opacity="0.16" />
           <path d={line} fill="none" stroke={dgCol} strokeWidth="1.8" />
-          {Math.abs(pk.val) > 1e-6 && <text x={SX(pk.tx) + px * 9} y={SY(pk.ty) - py * 9} fontSize="10.5" fontFamily={MONO} fontWeight="700" fill={dgCol} textAnchor="middle">{fmt(pk.val, 1)}</text>}
+          {Math.abs(pk.val) > 1e-6 && <text x={SX(pk.tx) + ox * 6} y={SY(pk.ty) - oy * 6} fontSize="10.5" fontFamily={MONO} fontWeight="700" fill={dgCol}
+            textAnchor={ox > 0.35 ? "start" : ox < -0.35 ? "end" : "middle"}
+            dominantBaseline={oy > 0.35 ? "auto" : oy < -0.35 ? "hanging" : "central"}>{fmt(pk.val, 1)}</text>}
         </g>;
       })}
 
@@ -1130,6 +1137,7 @@ function VerifyFrame({ res, model, kind }) {
         <table className="vt"><thead><tr><th>member</th><th>N₁</th><th>V₁</th><th>M₁</th><th>N₂</th><th>V₂</th><th>M₂</th></tr></thead><tbody>
           {res.members.map((mb, i) => { const a = mb.samples[0], b = mb.samples[mb.samples.length - 1]; return <tr key={i}><td>{mb.id}{(mb.rel1 || mb.rel2) ? " ○" : ""}</td><td>{fmt(a.N, 1)}</td><td>{fmt(a.V, 1)}</td><td>{fmt(a.M, 1)}</td><td>{fmt(b.N, 1)}</td><td>{fmt(b.V, 1)}</td><td>{fmt(b.M, 1)}</td></tr>; })}
         </tbody></table>
+        <p className="say dim">End 1 is the member's "from" node. N tension +, M sagging +, V anticlockwise + — a positive shear pair turns a slice of the member anticlockwise, so V = −dM/ds along it.</p>
         <Call kind="tip">Joint check: at a rigid joint the member moments must sum to zero (plus any applied joint moment). Pick a corner and add up its M values — a fast way to prove a moment diagram in the exam.</Call>
       </Lesson>
 
@@ -1158,7 +1166,7 @@ function VerifyFrame({ res, model, kind }) {
           <Step>1. Determinacy: SI = 3m + r − 3n − releases. Zero → pure statics.</Step>
           <Step>2. Look for symmetry. Symmetric frame + symmetric load ⇒ no sway, and the shear at the axis is zero.</Step>
           <Step>3. Reactions from whole-frame equilibrium; use hinges to supply extra equations (M = 0 there).</Step>
-          <Step>4. Cut each member free, apply end actions, draw N, V, M in local axes.</Step>
+          <Step>4. Cut each member free, apply end actions, draw N, V, M in local axes (V anticlockwise +).</Step>
           <Step>5. Joint equilibrium: moments into a rigid joint sum to zero.</Step>
           <Step>6. Deflected shape: joints keep their angles, members stay continuous, and curvature must agree in sign with the moment diagram.</Step>
         </Eqn>
@@ -1322,7 +1330,7 @@ export default function StructuralLab() {
               {diagram === "N" && isTruss && <span className="legend"><span className="sw" style={{ background: C.axial }} />tension</span>}
               {diagram === "N" && isTruss && <span className="legend"><span className="sw" style={{ background: C.bad }} />compression · dashed = zero-force</span>}
               {diagram === "N" && !isTruss && <span className="legend"><span className="sw" style={{ background: C.axial }} />tension + · compression −</span>}
-              {diagram === "V" && <span className="legend"><span className="sw" style={{ background: C.shear }} />shear, local sign</span>}
+              {diagram === "V" && <span className="legend"><span className="sw" style={{ background: C.shear }} />shear · anticlockwise + · + plotted on local +y (left of from→to)</span>}
               {diagram === "D" && <span className="legend"><span className="sw" style={{ background: C.defl }} />deformed (exaggerated) vs dashed original</span>}
               {diagram === "model" && <span className="legend"><span className="sw" style={{ background: C.good }} />green = reactions · navy = loads</span>}
             </div>

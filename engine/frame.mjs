@@ -8,7 +8,8 @@
      • partial + trapezoidal UDL    (w1..w2 over t1..t2)
      • point moment on a member
    Conventions: global X right +, Y up +, theta CCW +.
-   Internal: axial tension +, bending sagging +.
+   Internal: axial tension +, bending sagging +, shear anticlockwise +
+   (V turns a slice of member anticlockwise; so dM/ds = −V).
    ============================================================ */
 
 export function gauss(Ain, bin) {
@@ -258,14 +259,16 @@ export function analyzeFrame(model) {
         el.cd.rel.forEach((rd, r) => { ul[rd] = el.cd.y[r] - el.cd.X[r].reduce((s, v, c2) => s + v * uk[c2], 0); });
       }
       const sl = mv(el.k0, ul).map((v, i) => v - el.f0[i]);
-      const Ni = -sl[0], Vi = sl[1], Mi = -sl[2];
+      // sl[1] is the local +y end force on the member, i.e. clockwise shear;
+      // negate it so shear is reported anticlockwise-positive
+      const Ni = -sl[0], Vi = -sl[1], Mi = -sl[2];
       const Le = el.Le, q1 = el.q1, q2 = el.q2, p1 = el.p1, p2 = el.p2;
       const nIn = 4;
       for (let kk = 0; kk <= nIn; kk++) {
         const x = Le * kk / nIn;
         const sG = (el.t0 + (el.t1 - el.t0) * (kk / nIn)) * M.L;
-        const Vx = Vi + q1 * x + (q2 - q1) * x * x / (2 * Le);
-        const Mx = Mi + Vi * x + q1 * x * x / 2 + (q2 - q1) * x * x * x / (6 * Le);
+        const Vx = Vi - q1 * x - (q2 - q1) * x * x / (2 * Le);
+        const Mx = Mi - Vi * x + q1 * x * x / 2 + (q2 - q1) * x * x * x / (6 * Le);
         const Nx = Ni - (p1 * x + (p2 - p1) * x * x / (2 * Le));
         if (!(ei > 0 && kk === 0)) samples.push({ s: sG, N: Nx, V: Vx, M: Mx });
       }

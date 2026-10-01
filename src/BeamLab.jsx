@@ -777,15 +777,16 @@ function VerifyTeach({ L, EI, supports, hinges, loads, res, det, probe, Dmm, tol
         <div className="m">ΣR = {fmt(res.totalR)} kN&nbsp; vs &nbsp;ΣW = {fmt(res.totalDown)} kN → balance <span className={res.eqOK ? "ok" : "no"}>{res.eqOK ? "✓ holds" : "✗ off"}</span></div>
       </Lesson>
 
-      <Lesson n="2" title="Build the shear force diagram (V)" sub="net up/down force across a cut" accent="#0E8A7B">
-        <p className="say">Shear is simple bookkeeping: walk along the beam keeping a running total of the up-and-down forces you've passed. A support adds its push; a downward load subtracts; a spread load drains it gradually.</p>
+      <Lesson n="2" title="Build the shear force diagram (V)" sub="anticlockwise + · net force across a cut" accent="#0E8A7B">
+        <p className="say">Shear is simple bookkeeping: walk along the beam keeping a running total of the forces you've passed. The sign rule is <b>anticlockwise positive</b> — positive shear tries to turn a slice of beam anticlockwise (left face pushed down, right face pushed up). Walking left → right, that makes V the running total of the <i>downward</i> forces: a downward load adds, a support's upward push subtracts, a spread load builds it gradually.</p>
         <Eqn>{walk.map((s, i) => <span className="step" key={i}>{i + 1}. {s}</span>)}</Eqn>
-        <Call kind="fact">The slope of the shear line is minus the load: <b>w = −dV/dx</b>. Flat where there's no load, straight ramp under a uniform load, vertical jump at a point force.</Call>
+        <Call kind="fact">The slope of the shear line equals the load: <b>w = dV/dx</b> (w downward +). Flat where there's no load, straight ramp under a uniform load, vertical jump at a point force.</Call>
         <p className="say">Biggest values: <b>V = {fmt(res.Vmax.v, 1)} kN</b> at x = {fmt(res.Vmax.x)} m and <b>V = {fmt(res.Vmin.v, 1)} kN</b> at x = {fmt(res.Vmin.x)} m.</p>
       </Lesson>
 
       <Lesson n="3" title="Build the bending moment diagram (M)" sub="how hard the beam is being bent" accent="#D4622A">
-        <p className="say">At any cut, the bending moment is the sum of (each force on one side × its distance to the cut). You don't have to redo that sum everywhere — there's a shortcut: <b>the slope of the M-line is the shear, V = dM/dx</b>. So M climbs while V is positive, falls while V is negative, and <b>turns at the exact spot where V = 0</b> (or where V leaps across zero under a point load). That's where you look for the peak.</p>
+        <p className="say">At any cut, the bending moment is the sum of (each force on one side × its distance to the cut). You don't have to redo that sum everywhere — there's a shortcut: <b>the slope of the M-line is minus the shear, V = −dM/dx</b>. So M (sagging +) climbs while V is negative, falls while V is positive, and <b>turns at the exact spot where V = 0</b> (or where V leaps across zero under a point load). That's where you look for the peak.</p>
+        <Call kind="tip">Drawn on the tension side (sagging below the line — the default here), the moment diagram slopes exactly the way the shear diagram reads: downhill where V is negative, uphill where V is positive. That's the payoff of anticlockwise-positive shear.</Call>
         <Call kind="remember">Sagging = smile = positive M (bottom fibres stretch). Hogging = frown = negative M (top fibres stretch). A simple support end has <b>M = 0</b>; a free cantilever tip has M = 0; a couple makes M jump by its size.</Call>
         <p className="say">From this beam:</p>
         <Eqn>
@@ -825,11 +826,11 @@ function VerifyTeach({ L, EI, supports, hinges, loads, res, det, probe, Dmm, tol
       <Lesson n="✓" title="The 30-second method (sketch order)" sub="what to do under exam pressure" accent="#1E7F3C" open={false}>
         <Eqn>
           <Step>1. Reactions — moments about one support, then ΣF.</Step>
-          <Step>2. Shear V — start at left reaction, add/subtract loads left→right; it must close to 0.</Step>
-          <Step>3. Moment M — areas under the V diagram; peak where V = 0; zero at simple ends.</Step>
+          <Step>2. Shear V (anticlockwise +) — walk left→right: a downward load adds, an upward reaction subtracts; it must close to 0.</Step>
+          <Step>3. Moment M — M (sagging +) changes by minus the area under V, so the tension-side sketch follows V's area directly; peak where V = 0; zero at simple ends.</Step>
           <Step>4. Deflection — quote the standard formula, or shape it from the M diagram (sag dips down, hog humps up, hinge gives a kink).</Step>
         </Eqn>
-        <Call kind="tip">Useful identities to keep on a mental sticky-note: w = −dV/dx, V = dM/dx, curvature = M/EI. Point load P ⇒ V jumps −P. Couple M₀ (CCW +) ⇒ M steps −M₀. Internal hinge ⇒ M = 0 with a kink in the deflected shape.</Call>
+        <Call kind="tip">Useful identities to keep on a mental sticky-note (anticlockwise shear +, sagging M +): w = dV/dx, V = −dM/dx, curvature = M/EI. Downward point load P ⇒ V jumps +P. Couple M₀ (CCW +) ⇒ M steps −M₀. Internal hinge ⇒ M = 0 with a kink in the deflected shape.</Call>
       </Lesson>
 
       {ref}
@@ -1080,7 +1081,7 @@ export default function BeamLab() {
 
           {res.stable ? (<>
             <div className="panel acc" style={{ "--pac": C.shear }}>
-              <div className="ph phc" style={{ "--pac": C.shear }}><span><span className="sw" style={{ background: C.shear }} />Shear force V — kN</span><span className="dim" style={{ textTransform: "none", letterSpacing: 0 }}>V = dM/dx</span></div>
+              <div className="ph phc" style={{ "--pac": C.shear }}><span><span className="sw" style={{ background: C.shear }} />Shear force V — kN</span><span className="dim" style={{ textTransform: "none", letterSpacing: 0 }}>↺ anticlockwise + · V = −dM/dx</span></div>
               <DiagPlot narrow={narrow} height={narrow ? 150 : 156} color={C.shear} X={res.xs} Y={res.V} L={L} anns={annsV} hoverX={hoverX} onHover={setHoverX} />
             </div>
             <div className="panel acc" style={{ "--pac": C.moment }}>
@@ -1119,7 +1120,7 @@ export default function BeamLab() {
               <Slider value={L} min={1} max={20} step={0.1} onChange={setL} dp={1} />
               <div className="fl">Flexural rigidity EI — kN·m²</div>
               <input type="number" step={1000} value={EI} style={{ width: "100%" }} onChange={e => { const v = parseFloat(e.target.value); if (isFinite(v) && v > 0) setEI(v); }} />
-              <div className="note">Loads downward +, couples CCW +. Sagging bending +, hogging −. Deflection up + (shown mm). BMD defaults to the tension side (sagging plotted down, UK convention). EI ≈ 50 000 kN·m² ≈ a 406×178 UB 74 (Iy ≈ 27 300 cm⁴, E = 210 GPa).</div>
+              <div className="note">Loads downward +, couples CCW +. Shear anticlockwise + (left face ↓, right face ↑), so V = −dM/dx. Sagging bending +, hogging −. Deflection up + (shown mm). BMD defaults to the tension side (sagging plotted down, UK convention). EI ≈ 50 000 kN·m² ≈ a 406×178 UB 74 (Iy ≈ 27 300 cm⁴, E = 210 GPa).</div>
             </div></div>
           )}
 
