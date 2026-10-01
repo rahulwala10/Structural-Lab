@@ -7,6 +7,7 @@
      • spring supports kx, ky, kr   (flexible restraint)
      • partial + trapezoidal UDL    (w1..w2 over t1..t2)
      • point moment on a member
+     • internal hinges anywhere along a member  (hinges: [{member, t}])
    Conventions: global X right +, Y up +, theta CCW +.
    Internal: axial tension +, bending sagging +, shear anticlockwise +
    (V turns a slice of member anticlockwise; so dM/ds = −V).
@@ -112,7 +113,10 @@ export function analyzeFrame(model) {
     const pts = memberLoads.filter(l => l.type === "mpoint" && l.member === mb.id).map(l => ({
       a: (l.t == null ? 0.5 : l.t) * L, fx: l.Fx || 0, fy: l.Fy || 0, mz: l.M || 0,
     }));
-    return { id: mb.id, mi, i1, i2, x1, y1, x2, y2, dx, dy, L, c, s, EI, EA, udls, pts, rel1: !!mb.rel1, rel2: !!mb.rel2 };
+    // internal hinges: positions along the member (ends are handled by rel1/rel2)
+    const hingeTs = [...new Set((model.hinges || []).filter(h => h.member === mb.id && isFinite(h.t))
+      .map(h => +Math.min(0.99, Math.max(0.01, h.t)).toFixed(6)))].sort((a, b) => a - b);
+    return { id: mb.id, mi, i1, i2, x1, y1, x2, y2, dx, dy, L, c, s, EI, EA, udls, pts, hingeTs, rel1: !!mb.rel1, rel2: !!mb.rel2 };
   }).filter(Boolean);
 
   memberMeta.forEach(M => {
@@ -120,6 +124,7 @@ export function analyzeFrame(model) {
     for (let k = 0; k <= SUB; k++) stations.add(+(k / SUB).toFixed(6));
     M.udls.forEach(u => { stations.add(+u.ta.toFixed(6)); stations.add(+u.tb.toFixed(6)); });
     M.pts.forEach(pt => stations.add(+(pt.a / M.L).toFixed(6)));
+    M.hingeTs.forEach(t => stations.add(t));
     const ts = [...stations].filter(t => t >= -1e-9 && t <= 1 + 1e-9).sort((x, y) => x - y);
     M.subNodes = ts.map(t => addNode(M.x1 + M.dx * t, M.y1 + M.dy * t));
     M.ts = ts;
@@ -140,7 +145,8 @@ export function analyzeFrame(model) {
       subEls.push({
         mi: M.mi, M, a: M.subNodes[e], b: M.subNodes[e + 1], Le, c: M.c, s: M.s,
         q1, q2, p1, p2, t0, t1, EI: M.EI, EA: M.EA,
-        relLocal: [].concat(e === 0 && M.rel1 ? [2] : [], e === nSub - 1 && M.rel2 ? [5] : []),
+        // an internal hinge releases the end rotation of the sub-element that ends there
+        relLocal: [].concat(e === 0 && M.rel1 ? [2] : [], (e === nSub - 1 && M.rel2) || M.hingeTs.some(h => Math.abs(h - t1) < 1e-9) ? [5] : []),
       });
     }
   });
@@ -213,6 +219,8 @@ export function analyzeFrame(model) {
     const k = endsAt[nd] || 0, f = rotHeld[nd] ? 1 : 0;
     releases += Math.min(relAt[nd], Math.max(0, k - 1 + f));
   });
+  // each internal hinge splits a member (+3 unknowns, +3 equations) and frees one moment
+  memberMeta.forEach(M => { releases += M.hingeTs.length; });
   const nUsed = un.filter(nd => usedNode[nd.id]).length;
   const SI = 3 * memberMeta.length + rCount - 3 * nUsed - releases;
 
@@ -286,7 +294,7 @@ export function analyzeFrame(model) {
         });
       }
     });
-    return { id: M.id, mi: M.mi, L: M.L, samples, defl, x1: M.x1, y1: M.y1, x2: M.x2, y2: M.y2, c: M.c, s: M.s, n1: model.members[M.mi].n1, n2: model.members[M.mi].n2, EI: M.EI, EA: M.EA, rel1: M.rel1, rel2: M.rel2 };
+    return { id: M.id, mi: M.mi, L: M.L, samples, defl, x1: M.x1, y1: M.y1, x2: M.x2, y2: M.y2, c: M.c, s: M.s, n1: model.members[M.mi].n1, n2: model.members[M.mi].n2, EI: M.EI, EA: M.EA, rel1: M.rel1, rel2: M.rel2, hinges: M.hingeTs };
   });
 
   let Mmax = 0, Mmin = 0, Vmax = 0, Vmin = 0, Nmax = 0, Nmin = 0, dmax = 0;

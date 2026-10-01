@@ -4,6 +4,11 @@ import {
   BEAM_PRESETS as PRESETS, withIds, beamUid as uid,
   patchCentroid, deriveReactions, buildShearWalk,
 } from "../engine/beam.mjs";
+import { beamReactionBreakdown, beamMomentTerms, beamSpanMoments, beamZeroShear } from "../engine/explain.mjs";
+import { beamToFrame, describe } from "../engine/practice.mjs";
+import { ShearSign, MomentSign, DeflSign, SignCard } from "./ui/SignGlyphs.jsx";
+import QuizPanel from "./ui/QuizPanel.jsx";
+import { useGrow, useCycle, KEYFRAMES } from "./ui/motion.js";
 
 /* ============================================================
    BEAM LAB — SFD · BMD · deflection, with a narrated hand-solve.
@@ -43,6 +48,7 @@ const MONO = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+${KEYFRAMES}
 .bl *{box-sizing:border-box}
 .bl{background:
   repeating-linear-gradient(0deg, transparent, transparent 27px, rgba(27,42,65,.035) 27px, rgba(27,42,65,.035) 28px),
@@ -67,7 +73,7 @@ const CSS = `
 
 /* ---- layout ---- */
 .bl .work{display:grid;grid-template-columns:minmax(0,1fr) 372px;gap:16px;margin-top:16px;align-items:start}
-@media(max-width:1000px){.bl .work{grid-template-columns:1fr}}
+@media(max-width:1000px){.bl .work{grid-template-columns:minmax(0,1fr)}}
 .bl .panel{background:${C.panel};border:1.5px solid ${C.ink};margin-bottom:14px}
 .bl .ph{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 11px;border-bottom:1.5px solid ${C.ink};font:600 10px ${MONO};letter-spacing:.11em;text-transform:uppercase}
 .bl .sw{width:9px;height:9px;display:inline-block;margin-right:7px;vertical-align:-1px}
@@ -229,6 +235,36 @@ const CSS = `
 .bl .card{transition:box-shadow .15s}
 @media (prefers-reduced-motion: reduce){.bl .chip,.bl .lchev,.bl .lh,.bl .card{transition:none}}
 
+/* ============ motion & new controls ============ */
+.bl .stamp{animation:sl-stamp .55s cubic-bezier(.3,1.4,.5,1) both}
+.bl .tb::before{background-size:200% 100%;animation:sl-shimmer 7s linear infinite}
+.bl .lesson.open .lb{animation:sl-rise .3s ease-out both}
+.bl .btn:active,.bl .chip:active,.bl .dirbtn:active,.bl .seg .sb:active{transform:scale(.95)}
+.bl .rx{display:inline-flex;align-items:center;gap:6px;font:600 9px ${MONO};letter-spacing:.08em;color:${C.good};text-transform:uppercase}
+.bl .rx .rxs{display:flex;border:1.3px solid ${C.good};border-radius:5px;overflow:hidden}
+.bl .rx button{font:600 9px ${MONO};letter-spacing:.04em;padding:4px 7px;border:none;border-right:1px solid ${C.good};background:#fff;color:${C.good};cursor:pointer;text-transform:uppercase}
+.bl .rx button:last-child{border-right:none}
+.bl .rx button.on{background:${C.good};color:#fff}
+.bl .qa{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 11px;border-top:1.2px dashed ${C.grid}}
+.bl .qa .ql{font:700 8.5px ${MONO};letter-spacing:.12em;text-transform:uppercase;color:${C.inkSoft};margin-right:2px}
+.bl .qa button{font:600 9.5px ${MONO};padding:6px 10px;border:1.3px solid ${C.line};border-radius:20px;background:#fff;color:${C.ink};cursor:pointer;transition:transform .1s,border-color .1s}
+.bl .qa button:hover{border-color:${C.ink};transform:translateY(-1px)}
+.bl .qa button.hg{border-color:${C.moment};color:${C.moment}}
+.bl .glyphs{display:inline-flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font:500 9.5px ${MONO}}
+.bl .ty{display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap;padding:10px 12px;border:1.5px solid ${C.ink};border-radius:8px;margin-bottom:14px;background:linear-gradient(90deg,#FFF7EF,#fff 60%)}
+.bl .ty .tyt{font:700 12.5px 'Archivo'}
+.bl .ty .tys{font:500 10px ${MONO};color:${C.inkSoft};margin-top:2px}
+.bl .ty .tyb{font:700 10.5px ${MONO};letter-spacing:.06em;text-transform:uppercase;padding:9px 14px;border-radius:7px;border:2px solid ${C.moment};background:${C.moment};color:#fff;cursor:pointer;transition:transform .1s}
+.bl .ty .tyb:hover{transform:translateY(-1px) rotate(-1deg)}
+.bl .ty .tyb.off{background:#fff;color:${C.moment}}
+.bl .curtain{border:1.5px dashed ${C.line};border-radius:8px;padding:18px;text-align:center;font:500 11px ${MONO};color:${C.inkSoft};margin-bottom:14px;background:repeating-linear-gradient(45deg,#fff,#fff 10px,#F5F7F8 10px,#F5F7F8 20px)}
+.bl .cyc{font:600 9px ${MONO};letter-spacing:.06em;padding:4px 8px;border:1.3px solid ${C.defl};border-radius:5px;background:#fff;color:${C.defl};cursor:pointer;text-transform:uppercase}
+.bl .cyc.on{background:${C.defl};color:#fff}
+.bl .why{font:500 11px ${MONO};line-height:1.7;background:${C.sheet};border-left:3px solid var(--lac,${C.ink});padding:9px 12px;margin:9px 0;border-radius:0 5px 5px 0}
+.bl .why .t{display:block;margin:2px 0;white-space:pre-wrap;word-break:break-word}
+.bl .why b{color:${C.ink}}
+@media (prefers-reduced-motion: reduce){.bl .stamp,.bl .tb::before,.bl .lesson.open .lb{animation:none}}
+
 /* ================= phone layout ================= */
 @media(max-width:760px){
   .bl{padding:8px}
@@ -373,7 +409,7 @@ const mkHover = (onHover, g = GEO) => ({
 });
 
 /* ---------- the editable beam canvas ---------- */
-function BeamCanvas({ L, supports, hinges, loads, res, showR, hoverX, onHover, selected, onSelect, onDrag, narrow }) {
+function BeamCanvas({ L, supports, hinges, loads, res, rMode = "values", animKey = 0, ghost = 0, hoverX, onHover, selected, onSelect, onDrag, narrow }) {
   const { W, PADL, PADR, PLOTW } = narrow ? GEO_N : GEO;
   const BY = 96, H = 226, RY = 202;
   const svgRef = useRef(null);
@@ -423,6 +459,12 @@ function BeamCanvas({ L, supports, hinges, loads, res, showR, hoverX, onHover, s
       {selBand && <rect x={selBand[0]} y={12} width={selBand[1] - selBand[0]} height={H - 30} fill={C.sel} opacity="0.07" stroke={C.sel} strokeWidth="1" strokeDasharray="3 3" rx="3" />}
       {ticks.map(m => <line key={"g" + m} x1={xToPx(m)} y1={14} x2={xToPx(m)} y2={RY} stroke={C.grid} strokeWidth="1" opacity="0.55" />)}
 
+      {/* exaggerated deflected beam while the load cycles */}
+      {ghost > 0 && res && res.stable && (() => {
+        const mx = Math.max(1e-12, ...res.dv.map(Math.abs)), k = (26 / mx) * ghost;
+        return <polyline points={res.dx.map((x, i) => `${xToPx(x).toFixed(1)},${(BY - res.dv[i] * k).toFixed(1)}`).join(" ")} fill="none" stroke={C.defl} strokeWidth="3" strokeLinejoin="round" opacity="0.85" />;
+      })()}
+
       {/* UDLs (draggable band + endpoint handles) */}
       {udls.map(l => {
         const x1 = xToPx(l.x1), x2 = xToPx(l.x2);
@@ -461,7 +503,7 @@ function BeamCanvas({ L, supports, hinges, loads, res, showR, hoverX, onHover, s
       {loads.filter(l => l.type === "point" && Math.abs(l.P) > 1e-9).map(l => {
         const px = xToPx(l.x), col = isSel("load", l.id) ? C.sel : C.ink;
         return (
-          <g key={l.id} onPointerDown={begin({ selKind: "load", dragKind: "point", id: l.id })} style={hitStyle}>
+          <g key={l.id} className="sl-drop" onPointerDown={begin({ selKind: "load", dragKind: "point", id: l.id })} style={hitStyle}>
             <rect x={px - 13} y={BY - 60} width="26" height="62" fill="transparent" />
             {l.P > 0 ? <VArrow x={px} y1={BY - 52} y2={BY - 4} color={col} /> : <VArrow x={px} y1={BY - 4} y2={BY - 52} color={col} />}
             <text x={px} y={BY - 58} textAnchor="middle" fontSize="10" fontFamily={MONO} fontWeight="600" fill={col}>{fmt(Math.abs(l.P), 1)} kN</text>
@@ -501,15 +543,16 @@ function BeamCanvas({ L, supports, hinges, loads, res, showR, hoverX, onHover, s
       ))}
 
       {/* reactions */}
-      {showR && res && res.stable && res.reactions.map((r, i) => (
-        <g key={i}>
+      {rMode !== "off" && res && res.stable && res.reactions.map((r, i) => (
+        <g key={`${animKey}-${i}`} className="sl-pop">
           {Math.abs(r.R) > 1e-6 && (<g>
             {r.R > 0 ? <VArrow x={xToPx(r.x)} y1={BY + 74} y2={BY + 36} color={C.good} /> : <VArrow x={xToPx(r.x)} y1={BY + 36} y2={BY + 74} color={C.good} />}
-            <text x={xToPx(r.x)} y={BY + 88} textAnchor="middle" fontSize="9.5" fontFamily={MONO} fontWeight="600" fill={C.good}>{fmt(r.R, 1)} kN</text>
+            {rMode === "values" && <text x={xToPx(r.x)} y={BY + 88} textAnchor="middle" fontSize="9.5" fontFamily={MONO} fontWeight="600" fill={C.good}>{fmt(r.R, 1)} kN</text>}
           </g>)}
           {r.type === "fixed" && Math.abs(r.M) > 1e-6 && (<g>
-            <MomentArc x={xToPx(r.x) + (r.x <= L / 2 ? 26 : -26)} y={BY + 54} ccw={r.M > 0} color={C.good} r={11} />
-            <text x={xToPx(r.x) + (r.x <= L / 2 ? 26 : -26)} y={BY + 86} textAnchor="middle" fontSize="9.5" fontFamily={MONO} fontWeight="600" fill={C.good}>{fmt(r.M, 1)} kN·m</text>
+            {/* the wall's moment sits clear of the force label beside it */}
+            <MomentArc x={xToPx(r.x) + (r.x <= L / 2 ? 50 : -50)} y={BY + 54} ccw={r.M > 0} color={C.good} r={11} />
+            {rMode === "values" && <text x={xToPx(r.x) + (r.x <= L / 2 ? 78 : -78)} y={BY + 58} textAnchor={r.x <= L / 2 ? "start" : "end"} fontSize="9.5" fontFamily={MONO} fontWeight="600" fill={C.good}>{fmt(r.M, 1)} kN·m</text>}
           </g>)}
         </g>
       ))}
@@ -527,7 +570,7 @@ function BeamCanvas({ L, supports, hinges, loads, res, showR, hoverX, onHover, s
   );
 }
 
-function DiagPlot({ color, X, Y, L, flip = false, anns = [], cfs = [], showXLabels = false, hoverX, onHover, height = 156, narrow }) {
+function DiagPlot({ color, X, Y, L, flip = false, anns = [], cfs = [], showXLabels = false, hoverX, onHover, height = 156, narrow, grow = 1 }) {
   const { W, PADL, PADR, PLOTW } = narrow ? GEO_N : GEO;
   const PT = narrow ? 20 : 16, PB = (showXLabels ? 22 : 12) + (narrow ? 8 : 0);
   const xToPx = x => PADL + (x / L) * PLOTW;
@@ -539,7 +582,7 @@ function DiagPlot({ color, X, Y, L, flip = false, anns = [], cfs = [], showXLabe
   const yToPx = v => { const dv = flip ? -v : v; return PT + (1 - (dv - dmin) / (dmax - dmin)) * (height - PT - PB); };
   const zero = yToPx(0);
   let dpath = "", fpath = `M ${xToPx(X[0])} ${zero}`;
-  for (let i = 0; i < X.length; i++) { const px = xToPx(X[i]), py = yToPx(Y[i]); dpath += (i === 0 ? "M" : "L") + px.toFixed(2) + " " + py.toFixed(2) + " "; fpath += `L ${px.toFixed(2)} ${py.toFixed(2)} `; }
+  for (let i = 0; i < X.length; i++) { const px = xToPx(X[i]), py = yToPx(Y[i] * grow); dpath += (i === 0 ? "M" : "L") + px.toFixed(2) + " " + py.toFixed(2) + " "; fpath += `L ${px.toFixed(2)} ${py.toFixed(2)} `; }
   fpath += `L ${xToPx(X[X.length - 1])} ${zero} Z`;
   const ticks = []; for (let m = 0; m <= L + 1e-9; m += 1) ticks.push(m);
   let hi = -1;
@@ -556,12 +599,12 @@ function DiagPlot({ color, X, Y, L, flip = false, anns = [], cfs = [], showXLabe
       <text x={PADL - 6} y={height - PB} textAnchor="end" fontSize="9" fontFamily={MONO} fill={C.inkSoft}>{fmt(flip ? ymax : ymin, 1)}</text>
       {cfs.map((x, i) => (<g key={i}><circle cx={xToPx(x)} cy={zero} r="3.4" fill={C.panel} stroke={color} strokeWidth="2" /><text x={xToPx(x)} y={zero - 7} textAnchor="middle" fontSize="8.5" fontFamily={MONO} fill={C.inkSoft}>{fmt(x)}</text></g>))}
       {anns.map((a, i) => {
-        const px = xToPx(a.x), py = yToPx(a.v), dispNeg = (flip ? -a.v : a.v) < 0;
+        const px = xToPx(a.x), py = yToPx(a.v * grow), dispNeg = (flip ? -a.v : a.v) < 0;
         const anchor = px < PADL + 56 ? "start" : px > W - PADR - 56 ? "end" : "middle";
         return (<g key={i}><circle cx={px} cy={py} r="3.2" fill={color} /><text x={px} y={dispNeg ? py + 14 : py - 7} textAnchor={anchor} fontSize="9.5" fontFamily={MONO} fontWeight="600" fill={C.ink}>{a.label}</text></g>);
       })}
       {showXLabels && ticks.map(m => (Math.round(m) % metreStep === 0 || m === L) && (<text key={"x" + m} x={xToPx(m)} y={height - 6} textAnchor="middle" fontSize="9" fontFamily={MONO} fill={C.inkSoft}>{fmt(m, m % 1 ? 1 : 0)}</text>))}
-      {hi >= 0 && (<g><line x1={xToPx(X[hi])} y1={PT - 6} x2={xToPx(X[hi])} y2={height - PB} stroke={C.ink} strokeWidth="1" strokeDasharray="4 3" opacity="0.55" /><circle cx={xToPx(X[hi])} cy={yToPx(Y[hi])} r="4" fill={C.panel} stroke={color} strokeWidth="2.2" /></g>)}
+      {hi >= 0 && (<g><line x1={xToPx(X[hi])} y1={PT - 6} x2={xToPx(X[hi])} y2={height - PB} stroke={C.ink} strokeWidth="1" strokeDasharray="4 3" opacity="0.55" /><circle cx={xToPx(X[hi])} cy={yToPx(Y[hi] * grow)} r="4" fill={C.panel} stroke={color} strokeWidth="2.2" /></g>)}
     </svg>
   );
 }
@@ -701,6 +744,24 @@ function VerifyTeach({ L, EI, supports, hinges, loads, res, det, probe, Dmm, tol
 
   const rd = deriveReactions(L, supports, hinges, loads);
   const walk = buildShearWalk(L, supports, loads, probe);
+  const bd = beamReactionBreakdown(L, loads, res);
+  const spanM = beamSpanMoments(L, loads, res);
+  const zeros = beamZeroShear(loads, res);
+  const at = x => `x = ${fmt(x)} m`;
+  const sgn = v => (v < 0 ? "− " : "+ ") + fmt(Math.abs(v), 1);
+  // the free body left of a cut, written out term by term
+  const termTxt = t => t.kind === "reaction" ? `R_${t.name} × ${fmt(t.arm)}`
+    : t.kind === "fixing" ? `−M_${t.name} (wall ${t.C >= 0 ? "↺" : "↻"} ${fmt(Math.abs(t.C), 1)})`
+      : t.kind === "point" ? `−${fmt(t.F, 1)} × ${fmt(t.arm)}`
+        : t.kind === "couple" ? `−(${fmt(t.C, 1)}) couple`
+          : t.uniform ? `−(${fmt(t.w, 1)} × ${fmt(t.len)}) × ${fmt(t.arm)}` : `−${fmt(t.W, 1)} × ${fmt(t.arm)} (spread load at its centroid)`;
+  const keyPts = [];
+  if (res.Mmax.v > tolM) keyPts.push({ x: res.Mmax.x, v: res.Mmax.v, what: "largest sagging moment" });
+  if (res.Mmin.v < -tolM) keyPts.push({ x: res.Mmin.x, v: res.Mmin.v, what: "largest hogging moment" });
+  const freeBody = kp => {
+    const a = beamMomentTerms(kp.x, "L", loads, res), b = beamMomentTerms(kp.x, "R", loads, res);
+    return Math.abs(a.total - kp.v) <= Math.abs(b.total - kp.v) ? a : b;
+  };
   const detM = det ? det.rows.filter(r => r.unit === "kN·m") : [];
   const detD = det ? det.rows.find(r => r.unit === "mm") : null;
   const Dext = Math.min(...Dmm);
@@ -758,6 +819,17 @@ function VerifyTeach({ L, EI, supports, hinges, loads, res, det, probe, Dmm, tol
     reactBody = <>
       <p className="say">This arrangement isn't a simple "two props" or "single wall", so the clean hand-recipe doesn't apply directly{rd.H ? " (an internal hinge changes the bookkeeping)" : ""}. The method is the same in spirit — balance plus, where needed, compatibility — but it's quicker to read the solved reactions and confirm them with the equilibrium check below.</p>
       <Call kind="tip">For a beam with an internal hinge, you get a bonus equation: take moments of everything on one side of the hinge about the hinge and set it to zero (the hinge can't carry moment). That extra equation is what makes a hinged beam solvable by statics.</Call>
+      {bd && <>
+        <div className="lbl2">How each reaction is made up</div>
+        <p className="say">Split every span between neighbouring supports into what it would do <b>as a simple span</b>, plus a <b>continuity share</b> caused by the moments over its supports. An overhang hands all its load to the support it hangs from.</p>
+        <div className="why">{bd.supports.map((sp, i) => {
+          const bits = sp.parts.map(pt => pt.kind === "span"
+            ? `${fmt(pt.free, 1)} (simple-span share of ${bd.supports[pt.span.a].name}–${bd.supports[pt.span.b].name})${Math.abs(pt.cont) > 0.005 ? ` ${sgn(pt.cont)} (continuity)` : ""}`
+            : pt.kind === "overhang" ? `${fmt(pt.free, 1)} (overhang)` : `${fmt(pt.free, 1)} (load sitting on it)`);
+          return <span className="t" key={i}><b>R_{sp.name}</b> ({at(sp.x)}) = {bits.join(" + ")} = <b>{fmt(sp.sum, 1)} kN {sp.sum >= 0 ? "↑" : "↓"}</b>{sp.type === "fixed" ? `, plus the wall's grip M = ${fmt(sp.M, 1)} kN·m` : ""}</span>;
+        })}</div>
+        <Call kind="fact">Continuity share = (M over the far support − M over this one) ÷ span. Hogging over a support pulls load towards it: that is why a propped cantilever's fixed end carries 5wL/8 instead of wL/2, and its prop only 3wL/8.</Call>
+      </>}
     </>;
   }
 
@@ -766,6 +838,10 @@ function VerifyTeach({ L, EI, supports, hinges, loads, res, det, probe, Dmm, tol
   return (
     <div className="teach">
       <p className="intro">Here's the whole solve, narrated step by step. Tap any heading to fold it away. Everything updates the instant you drag the beam.</p>
+      <Lesson n="±" title="Sign conventions on these diagrams" sub="what + means on each plot" accent="#0E8A7B">
+        <SignCard kind="beam" />
+        <p className="say dim">Every number on this page follows these rules, so a negative shear means a clockwise pair and a negative moment means hogging.</p>
+      </Lesson>
       {detLesson}
 
       <Lesson n="1" title="Find the support reactions" sub="how hard each support pushes back" accent="#1E7F3C">
@@ -782,6 +858,12 @@ function VerifyTeach({ L, EI, supports, hinges, loads, res, det, probe, Dmm, tol
         <Eqn>{walk.map((s, i) => <span className="step" key={i}>{i + 1}. {s}</span>)}</Eqn>
         <Call kind="fact">The slope of the shear line equals the load: <b>w = dV/dx</b> (w downward +). Flat where there's no load, straight ramp under a uniform load, vertical jump at a point force.</Call>
         <p className="say">Biggest values: <b>V = {fmt(res.Vmax.v, 1)} kN</b> at x = {fmt(res.Vmax.x)} m and <b>V = {fmt(res.Vmin.v, 1)} kN</b> at x = {fmt(res.Vmin.x)} m.</p>
+        {zeros.length > 0 && <>
+          <div className="lbl2">Where V = 0 — and why</div>
+          <div className="why">{zeros.map((z, i) => <span className="t" key={i}>{z.kind === "cross"
+            ? <>{at(z.x)}: the downward load to the left (<b>{fmt(z.down, 1)} kN</b>) has just caught up with the reactions to the left (<b>{fmt(z.up, 1)} kN</b>), so nothing is left for the cut to carry — V = 0 and M turns here.</>
+            : <>{at(z.x)}: V jumps across zero ({fmt(z.from, 1)} → {fmt(z.to, 1)} kN) under the load, so M peaks right under it.</>}</span>)}</div>
+        </>}
       </Lesson>
 
       <Lesson n="3" title="Build the bending moment diagram (M)" sub="how hard the beam is being bent" accent="#D4622A">
@@ -796,6 +878,17 @@ function VerifyTeach({ L, EI, supports, hinges, loads, res, det, probe, Dmm, tol
           <span className="step">Zero-moment points (contraflexure, where it switches sag↔hog): {res.contraflexure.length ? res.contraflexure.map(x => fmt(x) + " m").join(", ") : "none — moment keeps one sign"}</span>
         </Eqn>
         {detM.length > 0 && <Call kind="tip" title="Textbook shortcut for this exact case">{detM.map((r, i) => <span key={i}>{r.q} = <b>{r.f}</b> = {fmt(r.hand, 1)} {r.unit}{i < detM.length - 1 ? <br /> : null}</span>)}</Call>}
+        {keyPts.length > 0 && <>
+          <div className="lbl2">How each key value is found</div>
+          <p className="say">Cut the beam at the point and take moments of everything on the <b>left</b> about the cut (sagging +): upward forces × lever arm count positive, downward loads and anticlockwise couples negative.</p>
+          <div className="why">{keyPts.map((kp, i) => { const fb = freeBody(kp); return <span className="t" key={i}><b>{kp.what}</b>, {at(kp.x)}:{"\n"}M = {fb.terms.map(termTxt).join("  ") || "0"}{"\n"}  = {fb.terms.map(t => sgn(t.value)).join(" ") || "0"} = <b>{fmt(fb.total, 1)} kN·m</b></span>; })}</div>
+        </>}
+        {spanM && spanM.spans.some(sp => sp.peak) && <>
+          <div className="lbl2">The exam sketch: free moment hung from the closing line</div>
+          <div className="why">{spanM.spans.filter(sp => sp.peak).map((sp, i) => <span className="t" key={i}>Span <b>{sp.name}</b>: as a simple span the load gives <b>{fmt(sp.peak.m0, 1)}</b> at {at(sp.peak.x)}; the straight closing line between the support moments ({fmt(sp.Ma, 1)} and {fmt(sp.Mb, 1)}) is at {fmt(sp.peak.close, 1)} there, so M = {fmt(sp.peak.m0, 1)} {sgn(sp.peak.close)} = <b>{fmt(sp.peak.M, 1)} kN·m</b>.</span>)}
+            {spanM.overhangs.filter(o => Math.abs(o.M) > tolM).map((o, i) => <span className="t" key={"o" + i}>The {o.side} overhang hangs off {o.at} like a cantilever: {fmt(o.M, 1)} kN·m over that support.</span>)}</div>
+          <Call kind="tip">In the exam, draw the simple-span ("free") moment first, then the straight line joining the support moments, and read the final moment as the gap between them. Where the two cross is a point of contraflexure.</Call>
+        </>}
         <Call kind="fact">Why contraflexure matters: it's where the beam stops sagging and starts hogging, so the moment is momentarily zero — a natural place to splice a beam or stop top steel. In a continuous beam it sits a little way out from the internal supports.</Call>
       </Lesson>
 
@@ -819,7 +912,7 @@ function VerifyTeach({ L, EI, supports, hinges, loads, res, det, probe, Dmm, tol
         </Eqn>
         {det
           ? <><p className="say dim">Matched textbook case: <b style={{ color: "#1B2A41" }}>{det.name}</b></p><Verif det={det} /></>
-          : <p className="say dim">No standard textbook case matches this exact set-up, so the closed-form column is skipped. The balance check above still vouches for the result, and the engine itself passed a 53-case closed-form test suite.</p>}
+          : <p className="say dim">No standard textbook case matches this exact set-up, so the closed-form column is skipped. The balance check above still vouches for the result, and the engine itself is checked against closed-form solutions on every build.</p>}
         {hinges.length > 0 && <><div className="lbl2">Hinge release check</div><Eqn>{hinges.map((h, i) => { const Mh = probe.MatSide(h.x); const ok = Math.abs(Mh) <= Math.max(0.02, 0.01 * Math.max(Math.abs(res.Mmax.v), Math.abs(res.Mmin.v))); return <span className="step" key={i}>Hinge at x = {fmt(h.x)} m must carry no moment → M = {fmt(Mh)} kN·m ≈ 0 <span className={ok ? "ok" : "no"}>{ok ? "✓" : "✗"}</span></span>; })}</Eqn></>}
       </Lesson>
 
@@ -854,19 +947,22 @@ function titleOf(l) {
 }
 
 /* ============================================================ */
-export default function BeamLab() {
-  const init = useMemo(() => withIds(PRESETS[0].make()), []);
+export default function BeamLab({ initialConfig = null } = {}) {
+  const init = useMemo(() => withIds(initialConfig || PRESETS[0].make()), []);
   const [L, setLraw] = useState(init.L);
   const [EI, setEI] = useState(50000);
   const [supports, setSupports] = useState(init.supports);
   const [hinges, setHinges] = useState(init.hinges);
   const [loads, setLoads] = useState(init.loads);
   const [section, setSection] = useState("loads");
-  const [selected, setSelected] = useState({ kind: "load", id: init.loads[0].id });
+  const [selected, setSelected] = useState(init.loads.length ? { kind: "load", id: init.loads[0].id } : null);
   const [bmdTension, setBmdTension] = useState(true);
-  const [showR, setShowR] = useState(true);
+  const [rMode, setRMode] = useState("values");        // reactions: off · arrows · values
+  const [animKey, setAnimKey] = useState(0);            // bumps on preset → diagrams grow again
+  const [cycleOn, setCycleOn] = useState(false);        // deflection load-cycle animation
+  const [quiz, setQuiz] = useState(null);               // null · "on" · "revealed"
   const [hoverX, setHoverXf] = useState(null);
-  const [preset, setPreset] = useState(PRESETS[0].name);
+  const [preset, setPreset] = useState(initialConfig ? "" : PRESETS[0].name);
   const narrow = useNarrow();
 
   const setHoverX = f => setHoverXf(f === null ? null : f * L);
@@ -881,7 +977,7 @@ export default function BeamLab() {
   const applyPreset = p => {
     const cfg = withIds(p.make());
     setLraw(cfg.L); setSupports(cfg.supports); setHinges(cfg.hinges); setLoads(cfg.loads);
-    setPreset(p.name); setHoverXf(null);
+    setPreset(p.name); setHoverXf(null); setAnimKey(k => k + 1);
     setSelected(cfg.loads.length ? { kind: "load", id: cfg.loads[0].id } : null);
     setSection("loads");
   };
@@ -923,6 +1019,10 @@ export default function BeamLab() {
   const addHinge = () => { const id = uid(); setHinges(hs => [...hs, { id, x: L / 2 }]); select("hinge", id); };
 
   const Dmm = res.stable ? res.dv.map(v => v * 1000) : [];
+  const grow = useGrow(animKey);
+  const cyc = useCycle(cycleOn);
+  const quizModel = useMemo(() => (quiz ? beamToFrame({ L, supports, hinges, loads }) : null), [quiz, L, supports, hinges, loads]);
+  const hiding = quiz === "on";
   const tolV = res.stable ? Math.max(Math.abs(res.Vmax.v), Math.abs(res.Vmin.v)) * 1e-4 + 1e-9 : 0;
   const tolM = res.stable ? Math.max(Math.abs(res.Mmax.v), Math.abs(res.Mmin.v)) * 1e-4 + 1e-9 : 0;
 
@@ -1051,7 +1151,7 @@ export default function BeamLab() {
           <div className="tval">{fmt(EI, 0)} kN·m² · kN·m·mm</div>
         </div>
         <div className="tbc" style={{ alignItems: "center", justifyContent: "center" }}>
-          <div className="stamp" style={{ "--sc": stamp.col }}>{stamp.txt}</div>
+          <div key={stamp.txt} className="stamp" style={{ "--sc": stamp.col }}>{stamp.txt}</div>
           <div className="tmeta" style={{ marginTop: 6 }}>n = r−2−h = {res.r}−2−{res.h} = {res.nIndet}</div>
         </div>
       </div>
@@ -1061,38 +1161,63 @@ export default function BeamLab() {
       <div className="work">
         {/* ---- left: stage ---- */}
         <div>
+          <div className="ty">
+            <div><div className="tyt">🎯 {quiz ? "Testing yourself on this beam" : "Solve it yourself first?"}</div><div className="tys">{quiz ? "Answers are hidden until you check or reveal. Edit the beam and the quiz follows it." : "Hide the diagrams, sketch on a scratch pad, then check — get it all right and Beam Buddy dances."}</div></div>
+            <button className={"tyb" + (quiz ? " off" : "")} onClick={() => { setQuiz(q => (q ? null : "on")); setCycleOn(false); }}>{quiz ? "Close quiz" : "Test yourself"}</button>
+          </div>
+
           <div className="panel readout">
             <div className="rc"><div className="rl">x</div><div className="rv">{hv ? `${fmt(hv.x)} m` : "—"}</div></div>
-            <div className="rc"><div className="rl" style={{ color: C.shear }}>Shear V</div><div className="rv cv" style={{ "--cvc": C.shear }}>{hv ? `${fmt(hv.V, 1)} kN` : "—"}</div></div>
-            <div className="rc"><div className="rl" style={{ color: C.moment }}>Moment M</div><div className="rv cv" style={{ "--cvc": C.moment }}>{hv ? `${fmt(hv.M, 1)} kN·m` : "—"}</div></div>
-            <div className="rc"><div className="rl" style={{ color: C.defl }}>Defl. δ</div><div className="rv cv" style={{ "--cvc": C.defl }}>{hv ? `${fmt(hv.d, 2)} mm` : "—"}</div></div>
+            <div className="rc"><div className="rl" style={{ color: C.shear }}>Shear V</div><div className="rv cv" style={{ "--cvc": C.shear }}>{hv && !hiding ? `${fmt(hv.V, 1)} kN` : "—"}</div></div>
+            <div className="rc"><div className="rl" style={{ color: C.moment }}>Moment M</div><div className="rv cv" style={{ "--cvc": C.moment }}>{hv && !hiding ? `${fmt(hv.M, 1)} kN·m` : "—"}</div></div>
+            <div className="rc"><div className="rl" style={{ color: C.defl }}>Defl. δ</div><div className="rv cv" style={{ "--cvc": C.defl }}>{hv && !hiding ? `${fmt(hv.d, 2)} mm` : "—"}</div></div>
           </div>
 
           <div className="panel">
             <div className="ph"><span>Model — drag to edit</span>
-              <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", font: "inherit" }}>
-                <input type="checkbox" checked={showR} onChange={e => setShowR(e.target.checked)} style={{ accentColor: C.good }} />
-                <span style={{ color: C.good }}>reactions</span>
-              </label>
+              <span className="rx" title="how reactions are drawn">reactions
+                <span className="rxs">{[["off", "off"], ["arrows", "arrows"], ["values", "values"]].map(([k, lab]) => <button key={k} className={rMode === k && !hiding ? "on" : ""} disabled={hiding} onClick={() => { setRMode(k); setAnimKey(n => n + 1); }}>{lab}</button>)}</span>
+              </span>
             </div>
-            <BeamCanvas narrow={narrow} L={L} supports={supports} hinges={hinges} loads={loads} res={res} showR={showR} hoverX={hoverX} onHover={setHoverX} selected={selected} onSelect={select} onDrag={onCanvasDrag} />
-            <div className="hint"><b>Drag</b> any support, hinge or load to reposition · <b>tap</b> a marker to edit it · hover the diagrams to scrub values.</div>
+            <BeamCanvas narrow={narrow} L={L} supports={supports} hinges={hinges} loads={loads} res={res} rMode={hiding ? "off" : rMode} animKey={animKey} ghost={cycleOn ? cyc : 0} hoverX={hoverX} onHover={setHoverX} selected={selected} onSelect={select} onDrag={onCanvasDrag} />
+            <div className="qa"><span className="ql">add</span>
+              <button onClick={addPoint}>↓ point load</button>
+              <button onClick={addUDL}>▤ UDL</button>
+              <button onClick={addMoment}>↺ moment</button>
+              <button onClick={addSupport}>△ support</button>
+              <button className="hg" onClick={addHinge} title="an internal hinge: M = 0 there — drag it anywhere along the beam">○ hinge (M = 0)</button>
+            </div>
+            <div className="hint"><b>Drag</b> any support, load or hinge ○ along the beam · <b>tap</b> a marker to edit it · hover the diagrams to scrub values.</div>
           </div>
 
-          {res.stable ? (<>
+          {quiz && quizModel && (
+            <div className="panel acc" style={{ "--pac": C.moment }}>
+              <div className="ph phc" style={{ "--pac": C.moment }}><span>🎯 Test yourself — this beam</span></div>
+              <div className="pad">
+                <QuizPanel key={JSON.stringify(quizModel)} model={quizModel} title="" seed={7} prompt={`${describe(quizModel).text} Sketch the bending moment diagram and the deflected shape, and work out the reactions.`}
+                  onReveal={() => setQuiz("revealed")} />
+              </div>
+            </div>
+          )}
+
+          {hiding ? (
+            <div className="curtain">Diagrams hidden while you test yourself — check your answers or press <b>Reveal solution</b> to see them.</div>
+          ) : res.stable ? (<>
             <div className="panel acc" style={{ "--pac": C.shear }}>
-              <div className="ph phc" style={{ "--pac": C.shear }}><span><span className="sw" style={{ background: C.shear }} />Shear force V — kN</span><span className="dim" style={{ textTransform: "none", letterSpacing: 0 }}>↺ anticlockwise + · V = −dM/dx</span></div>
-              <DiagPlot narrow={narrow} height={narrow ? 150 : 156} color={C.shear} X={res.xs} Y={res.V} L={L} anns={annsV} hoverX={hoverX} onHover={setHoverX} />
+              <div className="ph phc" style={{ "--pac": C.shear }}><span><span className="sw" style={{ background: C.shear }} />Shear force V — kN</span><span className="glyphs"><ShearSign color={C.shear} /> anticlockwise + · V = −dM/dx</span></div>
+              <DiagPlot narrow={narrow} height={narrow ? 150 : 156} color={C.shear} X={res.xs} Y={res.V} L={L} anns={annsV} hoverX={hoverX} onHover={setHoverX} grow={grow} />
             </div>
             <div className="panel acc" style={{ "--pac": C.moment }}>
               <div className="ph phc" style={{ "--pac": C.moment }}><span><span className="sw" style={{ background: C.moment }} />Bending moment M — kN·m</span>
-                <button className="btn gh" style={{ padding: "4px 8px" }} onClick={() => setBmdTension(t => !t)}>{bmdTension ? "tension side ↓" : "sagging ↑"}</button>
+                <span className="glyphs"><MomentSign color={C.moment} /> sagging +
+                  <button className="btn gh" style={{ padding: "4px 8px" }} onClick={() => setBmdTension(t => !t)}>{bmdTension ? "tension side ↓" : "sagging ↑"}</button></span>
               </div>
-              <DiagPlot narrow={narrow} height={narrow ? 150 : 156} color={C.moment} X={res.xs} Y={res.M} L={L} flip={bmdTension} anns={annsM} cfs={res.contraflexure} hoverX={hoverX} onHover={setHoverX} />
+              <DiagPlot narrow={narrow} height={narrow ? 150 : 156} color={C.moment} X={res.xs} Y={res.M} L={L} flip={bmdTension} anns={annsM} cfs={res.contraflexure} hoverX={hoverX} onHover={setHoverX} grow={grow} />
             </div>
             <div className="panel acc" style={{ "--pac": C.defl }}>
-              <div className="ph phc" style={{ "--pac": C.defl }}><span><span className="sw" style={{ background: C.defl }} />Deflection δ — mm</span><span className="dim" style={{ textTransform: "none", letterSpacing: 0 }}>up +</span></div>
-              <DiagPlot narrow={narrow} height={narrow ? 158 : 156} color={C.defl} X={res.dx} Y={Dmm} L={L} anns={annsD} showXLabels hoverX={hoverX} onHover={setHoverX} />
+              <div className="ph phc" style={{ "--pac": C.defl }}><span><span className="sw" style={{ background: C.defl }} />Deflection δ — mm</span><span className="glyphs"><DeflSign color={C.defl} /> up +
+                <button className={"cyc" + (cycleOn ? " on" : "")} onClick={() => setCycleOn(v => !v)} title="apply and remove the load, and watch the beam sag on the model">{cycleOn ? "■ stop" : "▶ load cycle"}</button></span></div>
+              <DiagPlot narrow={narrow} height={narrow ? 158 : 156} color={C.defl} X={res.dx} Y={Dmm} L={L} anns={annsD} showXLabels hoverX={hoverX} onHover={setHoverX} grow={grow * (cycleOn ? cyc : 1)} />
             </div>
           </>) : (
             <div className="panel"><div className="calc m dim">No diagrams — the structure is a mechanism. Add a support, change a roller/pin to fixed, or remove a hinge. Each internal hinge releases one moment continuity, so you need r ≥ 2 + h restraints arranged stably.</div></div>
@@ -1152,8 +1277,9 @@ export default function BeamLab() {
             </div></div>
           )}
 
-          {section === "verify" && (
-            <VerifyTeach L={L} EI={EI} supports={supports} hinges={hinges} loads={loads} res={res} det={det} probe={probe} Dmm={Dmm} tolM={tolM} />
+          {section === "verify" && (hiding
+            ? <div className="panel"><div className="pad note" style={{ marginTop: 0 }}>Verify would give the answers away. Check your quiz answers or press <b>Reveal solution</b> first — then the full narrated solve is here.</div></div>
+            : <VerifyTeach L={L} EI={EI} supports={supports} hinges={hinges} loads={loads} res={res} det={det} probe={probe} Dmm={Dmm} tolM={tolM} />
           )}
         </div>
       </div>

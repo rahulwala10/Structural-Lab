@@ -238,7 +238,8 @@ function analyzeBeam(cfg) {
   events.forEach(x => sampleXs.push(x));
   sampleXs.sort((a, b) => a - b);
   const pts = [];
-  for (const x of sampleXs) {
+  // an event that coincides with a grid point must only be expanded once
+  for (const x of sampleXs.filter((x, i) => i === 0 || x - sampleXs[i - 1] > 1e-9)) {
     const isEvent = events.has(round6(x));
     if (isEvent) { pts.push({ x, incl: false }); pts.push({ x, incl: true }); }
     else pts.push({ x, incl: true });

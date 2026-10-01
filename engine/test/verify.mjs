@@ -11,6 +11,8 @@ import { analyzeFrame, analyzeTruss, makeArch } from '../index.mjs';
 import { KINDS } from '../../src/presets.js';
 import { failures } from './closed-form.mjs';
 import { beamFailures } from './beam.mjs';
+import { explainFailures } from './explain.mjs';
+import { practiceFailures } from './practice.mjs';
 
 const EI = 2e4, EA = 2e6;
 let fails = 0;
@@ -134,7 +136,7 @@ console.log('\n=== J. ROBUSTNESS — malformed models must not throw ===');
   ok(!threw, 'handled gracefully: untriangulated truss panel');
 }
 
-const total = fails + failures() + beamFailures();
+const total = fails + failures() + beamFailures() + explainFailures() + practiceFailures();
 console.log(total === 0
   ? `\n================  ALL CHECKS PASS  ================\n`
   : `\n================  ${total} FAILURE(S)  ================\n`);

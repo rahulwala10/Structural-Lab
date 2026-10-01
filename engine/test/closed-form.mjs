@@ -53,6 +53,48 @@ console.log('\n=== A. MEMBER END RELEASES (internal hinges) ===');
   console.log('    SI =', r.SI, '(releases counted:', r.releases, ')');
 }
 
+console.log('\n=== A2. INTERNAL HINGES ANYWHERE ALONG A MEMBER ===');
+{
+  const L = 8, w = 10;
+  // one member, hinge at midspan — must match the two-member release version above
+  const r = analyzeFrame({ EI, EA, sub: 12, nodes: [{ id: 'A', x: 0, y: 0 }, { id: 'B', x: L, y: 0 }], members: [{ id: 'm', n1: 'A', n2: 'B' }],
+    hinges: [{ id: 'h', member: 'm', t: 0.5 }],
+    supports: [{ node: 'A', type: 'fixed' }, { node: 'B', type: 'fixed' }], loads: [{ type: 'udl', member: 'm', w, dir: 'grav' }] });
+  near(Math.abs(R(r, 'A').M), w * L * L / 8, 0.1, 'fixed-fixed + hinge at 0.5L → M_fix = wL²/8');
+  near(R(r, 'A').Ry, w * L / 2, 0.05, '  R = wL/2');
+  const atHinge = r.members[0].samples.reduce((a, p) => Math.abs(p.s - L / 2) < Math.abs(a.s - L / 2) ? p : a);
+  near(atHinge.M, 0, 0.02, '  M = 0 at the hinge');
+  near(r.SI, 2, 0, '  SI = 3m + r − 3n − releases = 3 + 6 − 6 − 1 = 2');
+}
+{
+  // three-pinned portal made with a hinge inside the beam: H = wL²/8h, M_corner = −H·h
+  const Lb = 6, h = 4, w = 15;
+  const r = analyzeFrame({ EI, EA,
+    nodes: [{ id: 'A', x: 0, y: 0 }, { id: 'B', x: 0, y: h }, { id: 'C', x: Lb, y: h }, { id: 'D', x: Lb, y: 0 }],
+    members: [{ id: 'c1', n1: 'A', n2: 'B' }, { id: 'bm', n1: 'B', n2: 'C' }, { id: 'c2', n1: 'C', n2: 'D' }],
+    hinges: [{ id: 'h', member: 'bm', t: 0.5 }],
+    supports: [{ node: 'A', type: 'pin' }, { node: 'D', type: 'pin' }], loads: [{ type: 'udl', member: 'bm', w, dir: 'grav' }] });
+  near(r.SI, 0, 0, 'portal with beam hinge  SI = 0 (determinate)');
+  near(R(r, 'A').Rx, w * Lb * Lb / (8 * h), 0.02, '  thrust H = wL²/8h (inward)');
+  near(r.members[1].samples[0].M, -w * Lb * Lb / (8 * h) * h, 0.05, '  corner moment = −H·h (hogging)');
+}
+{
+  // hinge off-centre: right part spans hinge→B, left part is a cantilever carrying the hinge shear
+  const L = 10, w = 10, a = 3;
+  const r = analyzeFrame({ EI, EA, nodes: [{ id: 'A', x: 0, y: 0 }, { id: 'B', x: L, y: 0 }], members: [{ id: 'm', n1: 'A', n2: 'B' }],
+    hinges: [{ id: 'h', member: 'm', t: a / L }],
+    supports: [{ node: 'A', type: 'fixed' }, { node: 'B', type: 'rollerV' }], loads: [{ type: 'udl', member: 'm', w, dir: 'grav' }] });
+  near(R(r, 'B').Ry, w * (L - a) / 2, 0.02, 'Gerber hinge at 0.3L  R_B = w(L−a)/2');
+  near(Math.abs(R(r, 'A').M), w * a * a / 2 + w * (L - a) / 2 * a, 0.05, '  |M_A| = wa²/2 + V_hinge·a');
+  near(r.SI, 0, 0, '  determinate');
+}
+{
+  // a hinge in a simply supported span is a mechanism, not a crash
+  const r = analyzeFrame({ EI, EA, nodes: [{ id: 'A', x: 0, y: 0 }, { id: 'B', x: 6, y: 0 }], members: [{ id: 'm', n1: 'A', n2: 'B' }],
+    hinges: [{ id: 'h', member: 'm', t: 0.5 }], supports: [{ node: 'A', type: 'pin' }, { node: 'B', type: 'rollerV' }], loads: [{ type: 'udl', member: 'm', w: 10, dir: 'grav' }] });
+  near(r.stable ? 1 : 0, 0, 0, 'pin + roller + hinge → mechanism reported (stable = false)');
+}
+
 console.log('\n=== B. SUPPORT SETTLEMENT ===');
 {
   const L = 6, D = 0.01; // 10 mm settlement
